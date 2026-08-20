@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta
+from io import BytesIO
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +13,33 @@ import fetch_rankings as fetch  # noqa: E402
 
 
 class RankingTests(unittest.TestCase):
+    def test_api_request_treats_404_as_an_empty_ranking_page(self):
+        def opener(request, timeout):
+            raise fetch.urllib.error.HTTPError(
+                request.full_url,
+                404,
+                "Not Found",
+                {},
+                BytesIO(b'{"statusCode":404,"message":"Resource not found"}'),
+            )
+
+        payload = fetch.api_request(100433, 1, "app-id", "access-key", opener, attempts=1)
+
+        self.assertEqual(payload, {"Items": [], "_notFound": True})
+
+    def test_api_request_still_fails_for_authentication_errors(self):
+        def opener(request, timeout):
+            raise fetch.urllib.error.HTTPError(
+                request.full_url,
+                403,
+                "Forbidden",
+                {},
+                BytesIO(b'{"errorMessage":"Invalid Access Key"}'),
+            )
+
+        with self.assertRaisesRegex(RuntimeError, "Invalid Access Key"):
+            fetch.api_request(110854, 1, "app-id", "bad-key", opener, attempts=1)
+
     def test_api_request_sends_access_key_as_query_parameter(self):
         captured = {}
 
