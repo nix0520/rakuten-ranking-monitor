@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="楽天市場 Bra・ショーツランキングの順位変動モニター">
+  <title>楽天ランキングモニター</title>
+  <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">RAKUTEN MARKET INTELLIGENCE</p>
+      <h1>ランキングモニター</h1>
+      <p class="subtitle">Bra & ショーツ、17ジャンルの上位100商品を追跡</p>
+    </div>
+    <div class="updated" aria-live="polite">
+      <span class="status-dot"></span>
+      <span id="updatedAt">データ読込中…</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="summary" aria-label="概要">
+      <article><span>表示ジャンル</span><strong id="categoryCount">—</strong></article>
+      <article><span>表示商品</span><strong id="itemCount">—</strong></article>
+      <article><span>新規ランクイン</span><strong id="newCount">—</strong></article>
+      <article><span>データ期間</span><strong id="captureCount">—</strong></article>
+    </section>
+
+    <section class="control-panel" aria-label="絞り込み">
+      <div class="segmented" role="group" aria-label="商品グループ">
+        <button class="segment active" data-group="bra" type="button">Bra</button>
+        <button class="segment" data-group="shorts" type="button">ショーツ</button>
+      </div>
+      <label>
+        <span>ジャンル</span>
+        <select id="categorySelect"></select>
+      </label>
+      <label class="search-field">
+        <span>商品・ショップ検索</span>
+        <input id="searchInput" type="search" placeholder="商品名、商品コード、ショップ名" autocomplete="off">
+      </label>
+      <div class="segmented compact" role="group" aria-label="トレンド期間">
+        <button class="segment active" data-days="7" type="button">7日</button>
+        <button class="segment" data-days="30" type="button">30日</button>
+      </div>
+      <button id="csvButton" class="export-button" type="button">CSV出力</button>
+    </section>
+
+    <p id="categoryPath" class="category-path"></p>
+    <div id="errorBox" class="error-box" hidden></div>
+
+    <section class="table-shell" aria-label="ランキング一覧">
+      <table>
+        <thead>
+          <tr>
+            <th class="rank-col">順位</th>
+            <th>商品</th>
+            <th>ショップ</th>
+            <th>価格</th>
+            <th>レビュー</th>
+            <th>順位トレンド</th>
+          </tr>
+        </thead>
+        <tbody id="rankingBody"></tbody>
+      </table>
+      <div id="emptyState" class="empty-state" hidden>
+        <strong>該当する商品がありません</strong>
+        <span>検索条件を変更してください。</span>
+      </div>
+    </section>
+  </main>
+
+  <footer>Data provided by Rakuten Web Service · 1日4回更新（JST）</footer>
+  <script type="module" src="assets/app.js"></script>
+</body>
+</html>

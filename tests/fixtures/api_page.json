@@ -1,0 +1,33 @@
+{
+  "lastBuildDate": "2026-08-20T12:15:00+09:00",
+  "Items": [
+    {
+      "rank": 1,
+      "itemName": "テスト ノンワイヤーブラ",
+      "itemCode": "example-shop:test-001",
+      "itemPrice": 2990,
+      "itemUrl": "https://item.rakuten.co.jp/example-shop/test-001/",
+      "mediumImageUrls": [{"imageUrl": "https://example.com/item.jpg"}],
+      "reviewCount": 128,
+      "reviewAverage": 4.56,
+      "shopName": "テストショップ",
+      "shopCode": "example-shop",
+      "shopUrl": "https://www.rakuten.co.jp/example-shop/",
+      "genreId": 110854
+    },
+    {
+      "rank": 2,
+      "itemName": "テスト シームレス商品",
+      "itemCode": "example-shop:test-002",
+      "itemPrice": 1980,
+      "itemUrl": "https://item.rakuten.co.jp/example-shop/test-002/",
+      "mediumImageUrls": ["https://example.com/item-2.jpg"],
+      "reviewCount": 42,
+      "reviewAverage": 4.2,
+      "shopName": "テストショップ",
+      "shopCode": "example-shop",
+      "shopUrl": "https://www.rakuten.co.jp/example-shop/",
+      "genreId": 110854
+    }
+  ]
+}
