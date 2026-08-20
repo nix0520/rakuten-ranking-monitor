@@ -119,6 +119,8 @@ def api_request(
             with opener(request, timeout=30) as response:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return {"Items": [], "_notFound": True}
             if exc.code not in {429, 500, 502, 503, 504} or attempt == attempts - 1:
                 body = exc.read().decode("utf-8", errors="replace")[:500]
                 raise RuntimeError(f"Rakuten API HTTP {exc.code}: {body}") from exc
@@ -139,6 +141,12 @@ def fetch_category(
     source_build_at: str | None = None
     for page in range(1, 5):
         payload = request_fn(int(category["id"]), page, application_id, access_key)
+        if payload.get("_notFound"):
+            print(
+                f"  No ranking data for page {page}; keeping {len(collected)} rows",
+                flush=True,
+            )
+            break
         source_build_at = source_build_at or payload.get("lastBuildDate")
         raw_items = payload.get("Items") or payload.get("items") or []
         page_items = [entry.get("Item", entry.get("item", entry)) for entry in raw_items]
