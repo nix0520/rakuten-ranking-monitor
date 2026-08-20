@@ -81,6 +81,14 @@ class RankingTests(unittest.TestCase):
         fetch.validate_categories(categories)
         self.assertEqual(len(categories), 17)
         self.assertEqual({item["group"] for item in categories}, {"bra", "shorts"})
+        self.assertEqual(
+            [item["id"] for item in categories if item["group"] == "bra"],
+            [110854, 100442, 100433, 566228, 206742, 206725, 566018, 303662, 101817],
+        )
+        self.assertEqual(
+            [item["id"] for item in categories if item["group"] == "shorts"],
+            [110845, 206712, 206713, 206714, 566230, 206716, 206717, 100443],
+        )
 
     def test_normalize_supports_both_image_shapes(self):
         base = {"rank": "1", "itemCode": "shop:item", "itemPrice": "1234.0"}
