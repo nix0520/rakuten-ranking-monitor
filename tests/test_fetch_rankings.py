@@ -12,6 +12,34 @@ import fetch_rankings as fetch  # noqa: E402
 
 
 class RankingTests(unittest.TestCase):
+    def test_api_request_sends_access_key_as_query_parameter(self):
+        captured = {}
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"Items": []}'
+
+        def opener(request, timeout):
+            captured["url"] = request.full_url
+            captured["headers"] = request.headers
+            captured["timeout"] = timeout
+            return Response()
+
+        payload = fetch.api_request(110854, 1, "app-id", "access-key", opener, attempts=1)
+        query = fetch.urllib.parse.parse_qs(fetch.urllib.parse.urlparse(captured["url"]).query)
+
+        self.assertEqual(payload, {"Items": []})
+        self.assertEqual(query["applicationId"], ["app-id"])
+        self.assertEqual(query["accessKey"], ["access-key"])
+        self.assertNotIn("Accesskey", captured["headers"])
+        self.assertEqual(captured["timeout"], 30)
+
     def test_jst_falls_back_without_system_tzdata(self):
         def missing_zone(_key):
             raise fetch.ZoneInfoNotFoundError("missing tzdata")
