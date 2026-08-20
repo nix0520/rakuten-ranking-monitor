@@ -12,6 +12,14 @@ import fetch_rankings as fetch  # noqa: E402
 
 
 class RankingTests(unittest.TestCase):
+    def test_jst_falls_back_without_system_tzdata(self):
+        def missing_zone(_key):
+            raise fetch.ZoneInfoNotFoundError("missing tzdata")
+
+        fallback = fetch.load_jst(missing_zone)
+        self.assertEqual(fallback.utcoffset(None), timedelta(hours=9))
+        self.assertEqual(fallback.tzname(None), "JST")
+
     def test_category_configuration_is_exactly_17_unique_ids(self):
         categories = json.loads((ROOT / "config" / "categories.json").read_text(encoding="utf-8"))
         fetch.validate_categories(categories)

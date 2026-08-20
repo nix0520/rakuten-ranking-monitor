@@ -12,13 +12,23 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 API_URL = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601"
-JST = ZoneInfo("Asia/Tokyo")
+
+
+def load_jst(zone_factory: Callable[[str], Any] = ZoneInfo) -> Any:
+    """Use IANA tzdata when available and a fixed JST offset on Windows otherwise."""
+    try:
+        return zone_factory("Asia/Tokyo")
+    except ZoneInfoNotFoundError:
+        return timezone(timedelta(hours=9), name="JST")
+
+
+JST = load_jst()
 ROOT = Path(__file__).resolve().parents[1]
 ELEMENTS = ",".join(
     [
