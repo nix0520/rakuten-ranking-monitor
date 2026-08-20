@@ -1,18 +1,12 @@
-name: Fetch rankings and deploy Pages
+name: Test and deploy Pages
 
 on:
   push:
     branches: [main]
-  schedule:
-    # GitHub Actions cron is UTC: 00:15, 06:15, 12:15, 18:15 in Japan.
-    - cron: "15 15 * * *"
-    - cron: "15 21 * * *"
-    - cron: "15 3 * * *"
-    - cron: "15 9 * * *"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -34,24 +28,6 @@ jobs:
 
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
-
-      - name: Fetch top 100 rankings for 17 genres
-        if: github.event_name != 'push'
-        env:
-          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
-          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
-        run: python3 scripts/fetch_rankings.py
-
-      - name: Persist refreshed ranking data
-        if: github.event_name != 'push'
-        run: |
-          if [[ -n "$(git status --short -- data/latest.json data/history.json)" ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add -- data/latest.json data/history.json
-            git commit -m "data: refresh Rakuten rankings"
-            git push origin HEAD:main
-          fi
 
       - name: Assemble static site
         run: |
