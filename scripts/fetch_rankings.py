@@ -102,6 +102,7 @@ def api_request(
     query = urllib.parse.urlencode(
         {
             "applicationId": application_id,
+            "accessKey": access_key,
             "genreId": genre_id,
             "page": page,
             "format": "json",
@@ -111,7 +112,7 @@ def api_request(
     )
     request = urllib.request.Request(
         f"{API_URL}?{query}",
-        headers={"accessKey": access_key, "User-Agent": "rakuten-ranking-monitor/1.0"},
+        headers={"User-Agent": "rakuten-ranking-monitor/1.0"},
     )
     for attempt in range(attempts):
         try:
