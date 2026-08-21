@@ -65,6 +65,7 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(payload, {"Items": []})
         self.assertEqual(query["applicationId"], ["app-id"])
         self.assertEqual(query["accessKey"], ["access-key"])
+        self.assertNotIn("period", query)
         self.assertNotIn("Accesskey", captured["headers"])
         self.assertEqual(captured["timeout"], 30)
 
@@ -98,7 +99,7 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(string_image["imageUrl"], "https://b")
         self.assertEqual(dictionary_image["itemPrice"], 1234)
 
-    def test_fetch_category_returns_only_top_100(self):
+    def test_fetch_category_returns_up_to_top_1000(self):
         calls = []
 
         def request(_genre, page, _app, _key):
@@ -106,25 +107,39 @@ class RankingTests(unittest.TestCase):
             start = (page - 1) * 30 + 1
             return {"Items": [{"rank": rank, "itemCode": f"shop:{rank}"} for rank in range(start, start + 30)]}
 
-        items, _ = fetch.fetch_category({"id": 110854}, "app", "key", request)
-        self.assertEqual(calls, [1, 2, 3, 4])
-        self.assertEqual(len(items), 100)
-        self.assertEqual(items[-1]["rank"], 100)
+        items, _ = fetch.fetch_category(
+            {"id": 110854}, "app", "key", request, sleep_fn=lambda _seconds: None
+        )
+        self.assertEqual(calls, list(range(1, 35)))
+        self.assertEqual(len(items), 1000)
+        self.assertEqual(items[-1]["rank"], 1000)
 
-    def test_change_annotation_and_history_retention(self):
+    def test_change_annotation_uses_previous_day(self):
         rankings = {"110854": [{"itemCode": "shop:a", "rank": 3}, {"itemCode": "shop:new", "rank": 8}]}
-        fetch.annotate_changes(rankings, {"110854": {"shop:a": 7}})
+        now = datetime(2026, 8, 20, 12, 15, tzinfo=fetch.JST)
+        captures = [
+            {"capturedAt": (now - timedelta(days=1)).isoformat(), "genres": {"110854": {"shop:a": 7}}},
+            {"capturedAt": now.replace(hour=8).isoformat(), "genres": {"110854": {"shop:a": 1}}},
+        ]
+        fetch.annotate_changes(rankings, fetch.previous_daily_ranks(captures, now))
         self.assertEqual(rankings["110854"][0]["change"], 4)
         self.assertTrue(rankings["110854"][1]["isNew"])
 
+    def test_history_is_partitioned_by_date_and_retained_for_30_days(self):
         now = datetime(2026, 8, 20, 12, 15, tzinfo=fetch.JST)
-        history = {"captures": [
+        captures = [
             {"capturedAt": (now - timedelta(days=31)).isoformat(), "genres": {}},
-            {"capturedAt": (now - timedelta(days=2)).isoformat(), "genres": {}},
-        ]}
-        updated = fetch.update_history(history, rankings, now)
-        self.assertEqual(len(updated["captures"]), 2)
-        self.assertEqual(updated["captures"][-1]["genres"]["110854"]["shop:a"], 3)
+            {"capturedAt": (now - timedelta(days=2)).isoformat(), "genres": {"110854": {"shop:a": 7}}},
+        ]
+        rankings = {"110854": [{"itemCode": "shop:a", "rank": 3}]}
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            updated = fetch.update_history(output_dir, captures, rankings, now)
+            self.assertEqual(len(updated["captures"]), 2)
+            self.assertEqual(updated["captures"][-1]["file"], "history/2026-08-20.json")
+            current = json.loads((output_dir / "history" / "2026-08-20.json").read_text(encoding="utf-8"))
+            self.assertEqual(current["genres"]["110854"]["shop:a"], 3)
+            self.assertFalse((output_dir / "history" / "2026-07-20.json").exists())
 
     def test_fixture_cli_output_shape(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -135,6 +150,8 @@ class RankingTests(unittest.TestCase):
             self.assertEqual(len(latest["categories"]), 17)
             self.assertEqual(len(latest["rankings"]), 17)
             self.assertEqual(len(history["captures"]), 1)
+            history_file = Path(directory) / history["captures"][0]["file"]
+            self.assertTrue(history_file.exists())
 
 
 if __name__ == "__main__":
