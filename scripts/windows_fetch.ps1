@@ -53,7 +53,7 @@ if (-not $SkipPull) {
 
 Invoke-CheckedCommand py.exe -3 scripts\fetch_rankings.py
 
-$changes = (& git.exe status --porcelain -- data/latest.json data/history.json) -join ""
+$changes = (& git.exe status --porcelain -- data/latest.json data/history.json data/history) -join ""
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect ranking data changes."
 }
@@ -64,7 +64,7 @@ if ([string]::IsNullOrWhiteSpace($changes)) {
 
 Invoke-CheckedCommand git.exe config user.name "rakuten-ranking-bot"
 Invoke-CheckedCommand git.exe config user.email "rakuten-ranking-bot@users.noreply.github.com"
-Invoke-CheckedCommand git.exe add -- data/latest.json data/history.json
+Invoke-CheckedCommand git.exe add -- data/latest.json data/history.json data/history
 $timestamp = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow, "Tokyo Standard Time").ToString("yyyy-MM-dd HH:mm 'JST'")
 Invoke-CheckedCommand git.exe commit -m "data: refresh Rakuten rankings ($timestamp)"
 Invoke-CheckedCommand git.exe push origin HEAD:main
