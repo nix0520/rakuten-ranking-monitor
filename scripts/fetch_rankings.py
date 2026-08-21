@@ -30,8 +30,12 @@ def load_jst(zone_factory: Callable[[str], Any] = ZoneInfo) -> Any:
 
 JST = load_jst()
 ROOT = Path(__file__).resolve().parents[1]
+MAX_RANK = 1000
+MAX_PAGES = 34
+HISTORY_DAYS = 30
 ELEMENTS = ",".join(
     [
+        "lastBuildDate",
         "rank", "itemName", "itemCode", "itemPrice", "itemUrl", "mediumImageUrls",
         "reviewCount", "reviewAverage", "shopName", "shopCode", "shopUrl", "genreId",
     ]
@@ -136,10 +140,11 @@ def fetch_category(
     application_id: str,
     access_key: str,
     request_fn: Callable[[int, int, str, str], dict[str, Any]] = api_request,
+    sleep_fn: Callable[[float], None] = time.sleep,
 ) -> tuple[list[dict[str, Any]], str | None]:
     collected: list[dict[str, Any]] = []
     source_build_at: str | None = None
-    for page in range(1, 5):
+    for page in range(1, MAX_PAGES + 1):
         payload = request_fn(int(category["id"]), page, application_id, access_key)
         if payload.get("_notFound"):
             print(
@@ -153,18 +158,50 @@ def fetch_category(
         collected.extend(normalize_item(item) for item in page_items if isinstance(item, dict))
         if len(page_items) < 30:
             break
-        time.sleep(0.25)
+        if page < MAX_PAGES:
+            sleep_fn(1.0)
     unique: dict[str, dict[str, Any]] = {}
     for item in sorted(collected, key=lambda value: value["rank"]):
         code = item["itemCode"]
-        if code and code not in unique and 1 <= item["rank"] <= 100:
+        if code and code not in unique and 1 <= item["rank"] <= MAX_RANK:
             unique[code] = item
-    return list(unique.values())[:100], source_build_at
+    return list(unique.values())[:MAX_RANK], source_build_at
 
 
-def previous_ranks(history: dict[str, Any]) -> dict[str, dict[str, int]]:
-    captures = history.get("captures") or []
-    return captures[-1].get("genres", {}) if captures else {}
+def capture_datetime(capture: dict[str, Any]) -> datetime | None:
+    try:
+        value = datetime.fromisoformat(capture["capturedAt"])
+        return value.replace(tzinfo=JST) if value.tzinfo is None else value.astimezone(JST)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def load_history_captures(output_dir: Path, history: dict[str, Any]) -> list[dict[str, Any]]:
+    """Load both the legacy inline history and the date-partitioned format."""
+    captures: list[dict[str, Any]] = []
+    for entry in history.get("captures") or []:
+        if isinstance(entry.get("genres"), dict):
+            captures.append(entry)
+            continue
+        relative_path = entry.get("file")
+        if not relative_path:
+            continue
+        capture = load_json(output_dir / str(relative_path), None)
+        if isinstance(capture, dict) and isinstance(capture.get("genres"), dict):
+            captures.append(capture)
+    return sorted(captures, key=lambda capture: capture.get("capturedAt", ""))
+
+
+def previous_daily_ranks(
+    captures: list[dict[str, Any]], captured_at: datetime
+) -> dict[str, dict[str, int]]:
+    current_date = captured_at.astimezone(JST).date()
+    candidates = [
+        capture
+        for capture in captures
+        if (when := capture_datetime(capture)) is not None and when.date() < current_date
+    ]
+    return candidates[-1].get("genres", {}) if candidates else {}
 
 
 def annotate_changes(
@@ -180,28 +217,49 @@ def annotate_changes(
 
 
 def update_history(
-    history: dict[str, Any], rankings: dict[str, list[dict[str, Any]]], captured_at: datetime
+    output_dir: Path,
+    captures: list[dict[str, Any]],
+    rankings: dict[str, list[dict[str, Any]]],
+    captured_at: datetime,
 ) -> dict[str, Any]:
-    capture = {
+    current_capture = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
         "genres": {
             genre_id: {item["itemCode"]: item["rank"] for item in items if item["itemCode"]}
             for genre_id, items in rankings.items()
         },
     }
-    cutoff = captured_at - timedelta(days=30)
-    retained = []
-    for existing in history.get("captures") or []:
+    current_date = captured_at.astimezone(JST).date()
+    cutoff_date = current_date - timedelta(days=HISTORY_DAYS - 1)
+    by_date: dict[str, dict[str, Any]] = {}
+    for existing in [*captures, current_capture]:
+        when = capture_datetime(existing)
+        if when is not None and cutoff_date <= when.date() <= current_date:
+            by_date[when.date().isoformat()] = existing
+
+    history_dir = output_dir / "history"
+    history_dir.mkdir(parents=True, exist_ok=True)
+    for day, capture in sorted(by_date.items()):
+        write_json(history_dir / f"{day}.json", capture)
+
+    for path in history_dir.glob("*.json"):
         try:
-            when = datetime.fromisoformat(existing["capturedAt"])
-            if when.tzinfo is None:
-                when = when.replace(tzinfo=JST)
-            if when >= cutoff:
-                retained.append(existing)
-        except (KeyError, TypeError, ValueError):
+            day = datetime.strptime(path.stem, "%Y-%m-%d").date()
+        except ValueError:
             continue
-    retained.append(capture)
-    return {"captures": retained}
+        if day < cutoff_date or day > current_date:
+            path.unlink()
+
+    return {
+        "captures": [
+            {
+                "date": day,
+                "capturedAt": capture["capturedAt"],
+                "file": f"history/{day}.json",
+            }
+            for day, capture in sorted(by_date.items())
+        ]
+    }
 
 
 def fixture_request(path: Path) -> Callable[[int, int, str, str], dict[str, Any]]:
@@ -220,6 +278,7 @@ def run(args: argparse.Namespace) -> None:
     latest_path = output_dir / "latest.json"
     history_path = output_dir / "history.json"
     history = load_json(history_path, {"captures": []})
+    history_captures = load_history_captures(output_dir, history)
 
     if args.fixture:
         application_id, access_key = "fixture", "fixture"
@@ -239,8 +298,8 @@ def run(args: argparse.Namespace) -> None:
         rankings[str(category["id"])] = items
         source_build_at = source_build_at or build_at
 
-    annotate_changes(rankings, previous_ranks(history))
     captured_at = datetime.now(JST).replace(microsecond=0)
+    annotate_changes(rankings, previous_daily_ranks(history_captures, captured_at))
     latest = {
         "generatedAt": captured_at.isoformat(),
         "sourceBuildAt": source_build_at,
@@ -248,7 +307,7 @@ def run(args: argparse.Namespace) -> None:
         "rankings": rankings,
     }
     write_json(latest_path, latest)
-    write_json(history_path, update_history(history, rankings, captured_at))
+    write_json(history_path, update_history(output_dir, history_captures, rankings, captured_at))
     print(f"Saved {sum(map(len, rankings.values()))} ranking rows at {captured_at.isoformat()}")
 
 

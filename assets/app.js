@@ -56,6 +56,10 @@ function filteredRows() {
   );
 }
 
+function visibleRows(rows) {
+  return state.query.trim() ? rows : rows.filter((row) => row.rank <= 100);
+}
+
 function rowTemplate(row) {
   const image = row.imageUrl
     ? `<img src="${escapeHtml(row.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
@@ -79,7 +83,7 @@ function updateCategorySelect() {
 }
 
 function render() {
-  state.rows = filteredRows();
+  state.rows = visibleRows(filteredRows());
   $("#rankingBody").innerHTML = state.rows.map(rowTemplate).join("");
   $("#emptyState").hidden = state.rows.length > 0;
   $("#itemCount").textContent = state.rows.length.toLocaleString("ja-JP");
@@ -96,13 +100,24 @@ function csvCell(value) {
 
 function exportCsv() {
   const headers = ["group", "genreId", "genreName", "rank", "previousRank", "change", "new", "itemCode", "itemName", "shopName", "price", "reviewAverage", "reviewCount", "itemUrl"];
-  const lines = [headers, ...state.rows.map((row) => [row.category.group, row.category.id, row.category.name, row.rank, row.previousRank, row.change, row.isNew, row.itemCode, row.itemName, row.shopName, row.itemPrice, row.reviewAverage, row.reviewCount, row.itemUrl])];
+  const exportRows = filteredRows();
+  const lines = [headers, ...exportRows.map((row) => [row.category.group, row.category.id, row.category.name, row.rank, row.previousRank, row.change, row.isNew, row.itemCode, row.itemName, row.shopName, row.itemPrice, row.reviewAverage, row.reviewCount, row.itemUrl])];
   const blob = new Blob(["\ufeff" + lines.map((line) => line.map(csvCell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const anchor = document.createElement("a");
   anchor.href = URL.createObjectURL(blob);
   anchor.download = `rakuten-ranking-${state.group}-${new Date().toISOString().slice(0, 10)}.csv`;
   anchor.click();
   URL.revokeObjectURL(anchor.href);
+}
+
+async function loadHistory(index) {
+  const captures = await Promise.all((index?.captures || []).map(async (entry) => {
+    if (entry.genres) return entry;
+    if (!entry.file) return null;
+    const response = await fetch(`data/${entry.file}`, { cache: "no-store" });
+    return response.ok ? response.json() : null;
+  }));
+  return { captures: captures.filter(Boolean) };
 }
 
 function bindEvents() {
@@ -123,12 +138,15 @@ async function init() {
   try {
     const [latestResponse, historyResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" })]);
     if (!latestResponse.ok || !historyResponse.ok) throw new Error("ランキングデータを取得できませんでした。");
-    [state.latest, state.history] = await Promise.all([latestResponse.json(), historyResponse.json()]);
+    const [latest, historyIndex] = await Promise.all([latestResponse.json(), historyResponse.json()]);
+    state.latest = latest;
+    state.history = await loadHistory(historyIndex);
     if (!state.latest.generatedAt) {
       $("#errorBox").hidden = false;
       $("#errorBox").textContent = "初回データ取得前です。GitHub Actionsを手動実行するとランキングが表示されます。";
     }
-    $("#updatedAt").textContent = state.latest.generatedAt ? `最終更新 ${dateTime.format(new Date(state.latest.generatedAt))} JST` : "初回取得待ち";
+    const sourceBuild = state.latest.sourceBuildAt ? ` · 楽天元データ ${state.latest.sourceBuildAt}` : "";
+    $("#updatedAt").textContent = state.latest.generatedAt ? `最終更新 ${dateTime.format(new Date(state.latest.generatedAt))} JST${sourceBuild}` : "初回取得待ち";
     updateCategorySelect(); bindEvents(); render();
   } catch (error) {
     $("#errorBox").hidden = false;
