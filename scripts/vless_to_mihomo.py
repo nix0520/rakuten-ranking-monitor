@@ -40,7 +40,7 @@ def vless_proxy(uri: str) -> dict:
     query = parse_qs(parsed.query, keep_blank_values=True)
     network = _first(query, "type", default="tcp").lower()
     security = _first(query, "security", default="none").lower()
-    name = unquote(parsed.fragment).strip() or "vless-node"
+    name = "VLESS_NODE"
     encryption = _first(query, "encryption")
     if encryption.lower() == "none":
         encryption = ""
@@ -115,9 +115,17 @@ def build_config(uri: str, mixed_port: int) -> dict:
     return {
         "mixed-port": mixed_port,
         "allow-lan": False,
-        "mode": "global",
+        "mode": "rule",
         "log-level": "warning",
         "proxies": [proxy],
+        "proxy-groups": [
+            {
+                "name": "VLESS_PROXY",
+                "type": "select",
+                "proxies": [proxy["name"]],
+            }
+        ],
+        "rules": ["MATCH,VLESS_PROXY"],
     }
 
 
