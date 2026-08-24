@@ -18,6 +18,7 @@ jobs:
       - name: Validate secrets
         shell: bash
         env:
+          VLESS_URI: ${{ secrets.VLESS_URI }}
           MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
           MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
           RAKUTEN_ALLOWED_IP: ${{ secrets.RAKUTEN_ALLOWED_IP }}
@@ -25,8 +26,8 @@ jobs:
           RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
         run: |
           set -euo pipefail
-          if [[ -z "${MIHOMO_SUBSCRIPTION_URL}" && -z "${MIHOMO_CONFIG_B64}" ]]; then
-            echo "Set MIHOMO_SUBSCRIPTION_URL or MIHOMO_CONFIG_B64 in repository secrets."
+          if [[ -z "${VLESS_URI}" && -z "${MIHOMO_SUBSCRIPTION_URL}" && -z "${MIHOMO_CONFIG_B64}" ]]; then
+            echo "Set VLESS_URI, MIHOMO_SUBSCRIPTION_URL, or MIHOMO_CONFIG_B64 in repository secrets."
             exit 1
           fi
           for name in RAKUTEN_ALLOWED_IP RAKUTEN_APPLICATION_ID RAKUTEN_ACCESS_KEY; do
@@ -39,6 +40,7 @@ jobs:
       - name: Prepare Mihomo configuration
         shell: bash
         env:
+          VLESS_URI: ${{ secrets.VLESS_URI }}
           MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
           MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
           MIHOMO_PROXY_PORT: ${{ secrets.MIHOMO_PROXY_PORT }}
@@ -46,7 +48,17 @@ jobs:
           set -euo pipefail
           install -d -m 700 "${RUNNER_TEMP}/mihomo"
           config="${RUNNER_TEMP}/mihomo/config.yaml"
-          if [[ -n "${MIHOMO_SUBSCRIPTION_URL}" ]]; then
+          port="${MIHOMO_PROXY_PORT:-7890}"
+          if [[ ! "${port}" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+            echo "MIHOMO_PROXY_PORT must be a valid TCP port."
+            exit 1
+          fi
+          if [[ -n "${VLESS_URI}" ]]; then
+            python3 scripts/vless_to_mihomo.py \
+              --uri-env VLESS_URI \
+              --port "${port}" \
+              --output "${config}"
+          elif [[ -n "${MIHOMO_SUBSCRIPTION_URL}" ]]; then
             curl --fail --silent --show-error --location \
               --retry 3 --connect-timeout 20 \
               --user-agent "clash.meta" \
@@ -56,20 +68,17 @@ jobs:
             printf '%s' "${MIHOMO_CONFIG_B64}" | base64 --decode > "${config}"
           fi
           test -s "${config}"
-          port="${MIHOMO_PROXY_PORT:-7890}"
-          if [[ ! "${port}" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
-            echo "MIHOMO_PROXY_PORT must be a valid TCP port."
-            exit 1
-          fi
-          if grep -qE '^mixed-port:' "${config}"; then
-            sed -i -E "s/^mixed-port:.*/mixed-port: ${port}/" "${config}"
-          else
-            printf '\nmixed-port: %s\n' "${port}" >> "${config}"
-          fi
-          if grep -qE '^mode:' "${config}"; then
-            sed -i -E 's/^mode:.*/mode: global/' "${config}"
-          else
-            printf 'mode: global\n' >> "${config}"
+          if [[ -z "${VLESS_URI}" ]]; then
+            if grep -qE '^mixed-port:' "${config}"; then
+              sed -i -E "s/^mixed-port:.*/mixed-port: ${port}/" "${config}"
+            else
+              printf '\nmixed-port: %s\n' "${port}" >> "${config}"
+            fi
+            if grep -qE '^mode:' "${config}"; then
+              sed -i -E 's/^mode:.*/mode: global/' "${config}"
+            else
+              printf 'mode: global\n' >> "${config}"
+            fi
           fi
           chmod 600 "${config}"
 
