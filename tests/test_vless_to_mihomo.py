@@ -20,7 +20,13 @@ class VlessToMihomoTests(unittest.TestCase):
 
         proxy = config["proxies"][0]
         self.assertEqual(config["mixed-port"], 7890)
-        self.assertEqual(config["mode"], "global")
+        self.assertEqual(config["mode"], "rule")
+        self.assertEqual(
+            config["proxy-groups"],
+            [{"name": "VLESS_PROXY", "type": "select", "proxies": ["VLESS_NODE"]}],
+        )
+        self.assertEqual(config["rules"], ["MATCH,VLESS_PROXY"])
+        self.assertEqual(proxy["name"], "VLESS_NODE")
         self.assertEqual(proxy["type"], "vless")
         self.assertEqual(proxy["server"], "example.com")
         self.assertEqual(proxy["encryption"], "")
