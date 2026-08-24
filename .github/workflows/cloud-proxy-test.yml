@@ -104,10 +104,11 @@ jobs:
             exit 1
           fi
           curl --fail --silent --show-error --location \
-            --retry 3 "${asset_url}" --output "${RUNNER_TEMP}/mihomo.gz"
-          gzip --decompress "${RUNNER_TEMP}/mihomo.gz"
-          chmod 700 "${RUNNER_TEMP}/mihomo"
-          "${RUNNER_TEMP}/mihomo" \
+            --retry 3 "${asset_url}" --output "${RUNNER_TEMP}/mihomo-bin.gz"
+          gzip --decompress --stdout "${RUNNER_TEMP}/mihomo-bin.gz" \
+            > "${RUNNER_TEMP}/mihomo/mihomo"
+          chmod 700 "${RUNNER_TEMP}/mihomo/mihomo"
+          "${RUNNER_TEMP}/mihomo/mihomo" \
             -d "${RUNNER_TEMP}/mihomo" \
             -f "${RUNNER_TEMP}/mihomo/config.yaml" \
             > "${RUNNER_TEMP}/mihomo.log" 2>&1 &
