@@ -10,13 +10,6 @@ jobs:
   proxy-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
-      MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
-      MIHOMO_PROXY_PORT: ${{ secrets.MIHOMO_PROXY_PORT }}
-      RAKUTEN_ALLOWED_IP: ${{ secrets.RAKUTEN_ALLOWED_IP }}
-      RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
-      RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
 
     steps:
       - name: Checkout repository
@@ -24,6 +17,12 @@ jobs:
 
       - name: Validate secrets
         shell: bash
+        env:
+          MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
+          MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
+          RAKUTEN_ALLOWED_IP: ${{ secrets.RAKUTEN_ALLOWED_IP }}
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
         run: |
           set -euo pipefail
           if [[ -z "${MIHOMO_SUBSCRIPTION_URL}" && -z "${MIHOMO_CONFIG_B64}" ]]; then
@@ -39,6 +38,10 @@ jobs:
 
       - name: Prepare Mihomo configuration
         shell: bash
+        env:
+          MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
+          MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
+          MIHOMO_PROXY_PORT: ${{ secrets.MIHOMO_PROXY_PORT }}
         run: |
           set -euo pipefail
           install -d -m 700 "${RUNNER_TEMP}/mihomo"
@@ -103,6 +106,9 @@ jobs:
 
       - name: Verify fixed proxy exit IP
         shell: bash
+        env:
+          MIHOMO_PROXY_PORT: ${{ secrets.MIHOMO_PROXY_PORT }}
+          RAKUTEN_ALLOWED_IP: ${{ secrets.RAKUTEN_ALLOWED_IP }}
         run: |
           set -euo pipefail
           port="${MIHOMO_PROXY_PORT:-7890}"
@@ -135,6 +141,9 @@ jobs:
 
       - name: Test Rakuten API authentication
         shell: bash
+        env:
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
