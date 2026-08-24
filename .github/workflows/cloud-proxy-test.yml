@@ -1,0 +1,163 @@
+name: Test cloud proxy
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proxy-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
+      MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
+      MIHOMO_PROXY_PORT: ${{ secrets.MIHOMO_PROXY_PORT }}
+      RAKUTEN_ALLOWED_IP: ${{ secrets.RAKUTEN_ALLOWED_IP }}
+      RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+      RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${MIHOMO_SUBSCRIPTION_URL}" && -z "${MIHOMO_CONFIG_B64}" ]]; then
+            echo "Set MIHOMO_SUBSCRIPTION_URL or MIHOMO_CONFIG_B64 in repository secrets."
+            exit 1
+          fi
+          for name in RAKUTEN_ALLOWED_IP RAKUTEN_APPLICATION_ID RAKUTEN_ACCESS_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "Required repository secret is missing: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Prepare Mihomo configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 "${RUNNER_TEMP}/mihomo"
+          config="${RUNNER_TEMP}/mihomo/config.yaml"
+          if [[ -n "${MIHOMO_SUBSCRIPTION_URL}" ]]; then
+            curl --fail --silent --show-error --location \
+              --retry 3 --connect-timeout 20 \
+              --user-agent "clash.meta" \
+              "${MIHOMO_SUBSCRIPTION_URL}" \
+              --output "${config}"
+          else
+            printf '%s' "${MIHOMO_CONFIG_B64}" | base64 --decode > "${config}"
+          fi
+          test -s "${config}"
+          port="${MIHOMO_PROXY_PORT:-7890}"
+          if [[ ! "${port}" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+            echo "MIHOMO_PROXY_PORT must be a valid TCP port."
+            exit 1
+          fi
+          if grep -qE '^mixed-port:' "${config}"; then
+            sed -i -E "s/^mixed-port:.*/mixed-port: ${port}/" "${config}"
+          else
+            printf '\nmixed-port: %s\n' "${port}" >> "${config}"
+          fi
+          if grep -qE '^mode:' "${config}"; then
+            sed -i -E 's/^mode:.*/mode: global/' "${config}"
+          else
+            printf 'mode: global\n' >> "${config}"
+          fi
+          chmod 600 "${config}"
+
+      - name: Download and start Mihomo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="${RUNNER_TEMP}/mihomo-release.json"
+          curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+            --output "${release_json}"
+          asset_url="$(jq -r '
+            [.assets[]
+              | select(.name | test("^mihomo-linux-amd64-v1-v[0-9].*\\.gz$"))
+              | .browser_download_url][0] // empty
+          ' "${release_json}")"
+          if [[ -z "${asset_url}" ]]; then
+            echo "Unable to locate the Mihomo Linux amd64-v1 release asset."
+            exit 1
+          fi
+          curl --fail --silent --show-error --location \
+            --retry 3 "${asset_url}" --output "${RUNNER_TEMP}/mihomo.gz"
+          gzip --decompress "${RUNNER_TEMP}/mihomo.gz"
+          chmod 700 "${RUNNER_TEMP}/mihomo"
+          "${RUNNER_TEMP}/mihomo" \
+            -d "${RUNNER_TEMP}/mihomo" \
+            -f "${RUNNER_TEMP}/mihomo/config.yaml" \
+            > "${RUNNER_TEMP}/mihomo.log" 2>&1 &
+          echo "MIHOMO_PID=$!" >> "${GITHUB_ENV}"
+
+      - name: Verify fixed proxy exit IP
+        shell: bash
+        run: |
+          set -euo pipefail
+          port="${MIHOMO_PROXY_PORT:-7890}"
+          proxy="http://127.0.0.1:${port}"
+          actual_ip=""
+          for _ in $(seq 1 30); do
+            if ! kill -0 "${MIHOMO_PID}" 2>/dev/null; then
+              echo "Mihomo stopped before the proxy became ready. Check the subscription format and proxy port."
+              exit 1
+            fi
+            actual_ip="$(curl --fail --silent --show-error \
+              --connect-timeout 5 --max-time 15 \
+              --proxy "${proxy}" https://api.ipify.org || true)"
+            if [[ -n "${actual_ip}" ]]; then
+              break
+            fi
+            sleep 2
+          done
+          if [[ -z "${actual_ip}" ]]; then
+            echo "The local Mihomo proxy did not become ready on port ${port}."
+            exit 1
+          fi
+          echo "Cloud proxy exit IP: ${actual_ip}"
+          if [[ "${actual_ip}" != "${RAKUTEN_ALLOWED_IP}" ]]; then
+            echo "Exit IP does not match RAKUTEN_ALLOWED_IP. Rakuten API was not called."
+            exit 1
+          fi
+          echo "HTTP_PROXY=${proxy}" >> "${GITHUB_ENV}"
+          echo "HTTPS_PROXY=${proxy}" >> "${GITHUB_ENV}"
+
+      - name: Test Rakuten API authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from scripts.fetch_rankings import api_request
+
+          payload = api_request(
+              genre_id=110854,
+              page=1,
+              application_id=os.environ["RAKUTEN_APPLICATION_ID"],
+              access_key=os.environ["RAKUTEN_ACCESS_KEY"],
+              attempts=1,
+          )
+          items = payload.get("Items") or payload.get("items") or []
+          if not items:
+              raise SystemExit("Rakuten API returned no ranking items for genre 110854.")
+          print(f"Rakuten API authentication succeeded; received {len(items)} items.")
+          PY
+
+      - name: Stop Mihomo
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${MIHOMO_PID:-}" ]]; then
+            kill "${MIHOMO_PID}" 2>/dev/null || true
+          fi
