@@ -158,13 +158,22 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           import os
+          import urllib.request
           from scripts.fetch_rankings import api_request
+
+          proxy_url = os.environ["HTTPS_PROXY"]
+          proxy_opener = urllib.request.build_opener(
+              urllib.request.ProxyHandler(
+                  {"http": proxy_url, "https": proxy_url}
+              )
+          ).open
 
           payload = api_request(
               genre_id=110854,
               page=1,
               application_id=os.environ["RAKUTEN_APPLICATION_ID"],
               access_key=os.environ["RAKUTEN_ACCESS_KEY"],
+              opener=proxy_opener,
               attempts=1,
           )
           items = payload.get("Items") or payload.get("items") or []
