@@ -93,16 +93,18 @@ class RankingTests(unittest.TestCase):
 
     def test_normalize_supports_both_image_shapes(self):
         base = {"rank": "1", "itemCode": "shop:item", "itemPrice": "1234.0"}
-        dictionary_image = fetch.normalize_item({**base, "mediumImageUrls": [{"imageUrl": "https://a"}]})
+        dictionary_image = fetch.normalize_item({**base, "mediumImageUrls": [{"imageUrl": "https://a"}], "pointRate": 5, "catchcopy": "10%OFFクーポン"})
         string_image = fetch.normalize_item({**base, "mediumImageUrls": ["https://b"]})
         self.assertEqual(dictionary_image["imageUrl"], "https://a")
         self.assertEqual(string_image["imageUrl"], "https://b")
         self.assertEqual(dictionary_image["itemPrice"], 1234)
+        self.assertEqual(dictionary_image["pointRate"], 5)
+        self.assertTrue(dictionary_image["couponMentioned"])
 
     def test_fetch_category_returns_up_to_top_1000(self):
         calls = []
 
-        def request(_genre, page, _app, _key):
+        def request(_genre, page, _app, _key, **_kwargs):
             calls.append(page)
             start = (page - 1) * 30 + 1
             return {"Items": [{"rank": rank, "itemCode": f"shop:{rank}"} for rank in range(start, start + 30)]}
@@ -152,6 +154,33 @@ class RankingTests(unittest.TestCase):
             self.assertEqual(len(history["captures"]), 1)
             history_file = Path(directory) / history["captures"][0]["file"]
             self.assertTrue(history_file.exists())
+            self.assertTrue((Path(directory) / "daily-update-log.json").exists())
+
+    def test_realtime_request_uses_period_and_top_100(self):
+        calls = []
+
+        def request(_genre, page, _app, _key, **kwargs):
+            calls.append((page, kwargs.get("period")))
+            start = (page - 1) * 30 + 1
+            return {"Items": [{"rank": rank, "itemCode": f"shop:{rank}"} for rank in range(start, start + 30)]}
+
+        items, _ = fetch.fetch_category(
+            {"id": 110854}, "app", "key", request, sleep_fn=lambda _seconds: None,
+            max_rank=100, period="realtime",
+        )
+        self.assertEqual(calls, [(1, "realtime"), (2, "realtime"), (3, "realtime"), (4, "realtime")])
+        self.assertEqual(len(items), 100)
+
+    def test_daily_observation_detects_first_change_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            first = datetime(2026, 8, 25, 9, 50, tzinfo=fetch.JST)
+            fetch.update_daily_observations(output, {"110854": [{"itemCode": "a", "rank": 2}]}, first, "2026-08-24T10:00:00+09:00")
+            fetch.update_daily_observations(output, {"110854": [{"itemCode": "a", "rank": 1}]}, first.replace(minute=0, hour=10), "2026-08-25T10:00:00+09:00")
+            fetch.update_daily_observations(output, {"110854": [{"itemCode": "a", "rank": 1}]}, first.replace(minute=10, hour=10), "2026-08-25T10:00:00+09:00")
+            log = json.loads((output / "daily-update-log.json").read_text(encoding="utf-8"))
+            self.assertEqual(log["days"][0]["firstUpdateDetectedAt"], "2026-08-25T10:00:00+09:00")
+            self.assertEqual(log["days"][0]["observations"][1]["changes"]["110854"]["moved"][0]["change"], 1)
 
 
 if __name__ == "__main__":

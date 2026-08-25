@@ -37,10 +37,11 @@ h1 { margin: 0; font-family: Georgia, "Yu Mincho", serif; font-size: clamp(34px,
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #19a974; box-shadow: 0 0 0 5px rgba(25,169,116,.12); }
 
 main { max-width: 1420px; margin: 0 auto; padding: 0 34px 40px; }
-.summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 16px; }
+.summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 16px; }
 .summary article { padding: 20px 22px; background: rgba(255,255,255,.8); border: 1px solid var(--line); border-radius: 16px; }
 .summary span { display: block; color: var(--muted); font-size: 12px; }
 .summary strong { display: block; margin-top: 5px; font: 500 27px Georgia, serif; }
+.summary small { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
 
 .control-panel {
   position: sticky; top: 10px; z-index: 10;
@@ -82,6 +83,7 @@ tbody tr:hover { background: #fffdf9; }
 .product-name { display: -webkit-box; overflow: hidden; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-weight: 700; line-height: 1.45; }
 .meta { margin-top: 5px; color: var(--muted); font-size: 10px; }
 .price { font-weight: 800; white-space: nowrap; }
+.promo { display: block; margin-top: 4px; color: var(--accent); font-size: 10px; font-weight: 700; white-space: normal; }
 .rating { color: #bb7900; font-weight: 800; }
 .review-count { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
 .sparkline { width: 150px; max-width: 100%; height: 42px; overflow: visible; }

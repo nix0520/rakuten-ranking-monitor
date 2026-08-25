@@ -6,6 +6,8 @@
       "itemName": "テスト ノンワイヤーブラ",
       "itemCode": "example-shop:test-001",
       "itemPrice": 2990,
+      "pointRate": 5,
+      "catchcopy": "10%OFFクーポン対象",
       "itemUrl": "https://item.rakuten.co.jp/example-shop/test-001/",
       "mediumImageUrls": [{"imageUrl": "https://example.com/item.jpg"}],
       "reviewCount": 128,
