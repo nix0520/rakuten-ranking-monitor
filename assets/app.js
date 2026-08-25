@@ -111,7 +111,7 @@ function selectMode(mode) {
   state.latest = mode === "realtime" ? state.realtimeLatest : state.dailyLatest;
   state.category = "all";
   document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.classList.toggle("active", button.dataset.rankingMode === mode));
-  $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ核心ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra & ショーツ、17ジャンルの日次ランキング最大1000位を追跡";
+  $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ17ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra & ショーツ、17ジャンルの日次ランキング最大1000位を追跡";
   $("#errorBox").hidden = Boolean(state.latest?.generatedAt);
   if (!state.latest?.generatedAt) $("#errorBox").textContent = "リアルタイム榜は初回采集后显示。新电脑更新程序并安装计划任务后会自动生成。";
   updateCategorySelect(); renderUpdatedAt(); render();
@@ -164,7 +164,7 @@ async function init() {
     if (!latestResponse.ok || !historyResponse.ok) throw new Error("ランキングデータを取得できませんでした。");
     const [latest, historyIndex] = await Promise.all([latestResponse.json(), historyResponse.json()]);
     state.dailyLatest = latest;
-    state.realtimeLatest = realtimeResponse.ok ? await realtimeResponse.json() : { categories: (latest.categories || []).filter((category) => [110854, 110845].includes(Number(category.id))), rankings: {} };
+    state.realtimeLatest = realtimeResponse.ok ? await realtimeResponse.json() : { categories: latest.categories || [], rankings: {} };
     state.latest = state.dailyLatest;
     state.history = await loadHistory(historyIndex);
     state.updateLog = updateResponse.ok ? await updateResponse.json() : { days: [] };

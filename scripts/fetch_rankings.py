@@ -34,7 +34,6 @@ ROOT = Path(__file__).resolve().parents[1]
 MAX_RANK = 1000
 MAX_PAGES = 34
 HISTORY_DAYS = 30
-REALTIME_GENRES = {110854, 110845}
 PROMOTION_PATTERN = re.compile(r"(?:クーポン|OFF|割引|値引|セール|ポイント(?:アップ|還元|倍))", re.IGNORECASE)
 ELEMENTS = ",".join(
     [
@@ -476,8 +475,6 @@ def run(args: argparse.Namespace) -> None:
     validate_categories(categories)
     output_dir = Path(args.output_dir)
     mode = args.mode
-    if mode == "realtime":
-        categories = [category for category in categories if int(category["id"]) in REALTIME_GENRES]
 
     if args.fixture:
         application_id, access_key = "fixture", "fixture"
