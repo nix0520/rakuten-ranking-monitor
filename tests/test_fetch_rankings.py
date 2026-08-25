@@ -182,6 +182,17 @@ class RankingTests(unittest.TestCase):
             self.assertEqual(log["days"][0]["firstUpdateDetectedAt"], "2026-08-25T10:00:00+09:00")
             self.assertEqual(log["days"][0]["observations"][1]["changes"]["110854"]["moved"][0]["change"], 1)
 
+    def test_realtime_latest_contains_previous_interval_change(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            when = datetime(2026, 8, 25, 10, 0, tzinfo=fetch.JST)
+            categories = [{"id": 110854, "group": "bra"}]
+            fetch.update_realtime(output, categories, {"110854": [{"itemCode": "a", "rank": 5, "itemPrice": 1000, "pointRate": 1}]}, when, "2026-08-25T10:00:00+09:00")
+            fetch.update_realtime(output, categories, {"110854": [{"itemCode": "a", "rank": 2, "itemPrice": 900, "pointRate": 5}]}, when + timedelta(minutes=20), "2026-08-25T10:20:00+09:00")
+            latest = json.loads((output / "realtime" / "latest.json").read_text(encoding="utf-8"))
+            self.assertEqual(latest["rankings"]["110854"][0]["change"], 3)
+            self.assertFalse(latest["rankings"]["110854"][0]["isNew"])
+
 
 if __name__ == "__main__":
     unittest.main()
