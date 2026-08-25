@@ -1,4 +1,4 @@
-const state = { latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [] };
+const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [] };
 const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -70,7 +70,7 @@ function rowTemplate(row) {
     <td><a class="shop-link" href="${escapeHtml(row.shopUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.shopName)}</a></td>
     <td class="price">${yen.format(row.itemPrice)}${row.pointRate > 1 ? `<span class="promo">ポイント${row.pointRate}倍</span>` : ""}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}</td>
     <td><span class="rating">★ ${Number(row.reviewAverage).toFixed(2)}</span><span class="review-count">${Number(row.reviewCount).toLocaleString("ja-JP")}件</span></td>
-    <td>${sparkline(trendPoints(row.category.id, row.itemCode))}</td>
+    <td>${state.mode === "realtime" ? '<span class="spark-empty">20分前比を順位横に表示</span>' : sparkline(trendPoints(row.category.id, row.itemCode))}</td>
   </tr>`;
 }
 
@@ -89,13 +89,32 @@ function render() {
   $("#itemCount").textContent = state.rows.length.toLocaleString("ja-JP");
   $("#newCount").textContent = state.rows.filter((row) => row.isNew).length.toLocaleString("ja-JP");
   $("#categoryCount").textContent = selectedCategories().length;
-  $("#captureCount").textContent = `${state.history?.captures?.length || 0} 回`;
+  $("#captureLabel").textContent = state.mode === "realtime" ? "更新間隔" : "データ期間";
+  $("#captureCount").textContent = state.mode === "realtime" ? "20分" : `${state.history?.captures?.length || 0} 回`;
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(new Date());
   const updateDay = (state.updateLog?.days || []).find((day) => day.date === today) || state.updateLog?.days?.at(-1);
-  $("#dailySwitch").textContent = updateDay?.firstUpdateDetectedAt ? dateTime.format(new Date(updateDay.firstUpdateDetectedAt)) : "判定待ち";
-  $("#dailySwitchDetail").textContent = updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "09:50から観測";
+  $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜首次切替";
+  $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (updateDay?.firstUpdateDetectedAt ? dateTime.format(new Date(updateDay.firstUpdateDetectedAt)) : "判定待ち");
+  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "09:50から観測");
   const selected = selectedCategories();
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${state.group === "bra" ? "Bra" : "ショーツ"}グループ · ${selected.length}ジャンル`;
+}
+
+function renderUpdatedAt() {
+  const sourceBuild = state.latest?.sourceBuildAt ? ` · 楽天元データ ${state.latest.sourceBuildAt}` : "";
+  const modeLabel = state.mode === "realtime" ? "リアルタイム榜" : "日榜";
+  $("#updatedAt").textContent = state.latest?.generatedAt ? `${modeLabel}更新 ${dateTime.format(new Date(state.latest.generatedAt))} JST${sourceBuild}` : `${modeLabel}の初回取得待ち`;
+}
+
+function selectMode(mode) {
+  state.mode = mode;
+  state.latest = mode === "realtime" ? state.realtimeLatest : state.dailyLatest;
+  state.category = "all";
+  document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.classList.toggle("active", button.dataset.rankingMode === mode));
+  $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ核心ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra & ショーツ、17ジャンルの日次ランキング最大1000位を追跡";
+  $("#errorBox").hidden = Boolean(state.latest?.generatedAt);
+  if (!state.latest?.generatedAt) $("#errorBox").textContent = "リアルタイム榜は初回采集后显示。新电脑更新程序并安装计划任务后会自动生成。";
+  updateCategorySelect(); renderUpdatedAt(); render();
 }
 
 function csvCell(value) {
@@ -125,6 +144,7 @@ async function loadHistory(index) {
 }
 
 function bindEvents() {
+  document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.addEventListener("click", () => selectMode(button.dataset.rankingMode)));
   document.querySelectorAll("[data-group]").forEach((button) => button.addEventListener("click", () => {
     document.querySelectorAll("[data-group]").forEach((item) => item.classList.toggle("active", item === button));
     state.group = button.dataset.group; state.category = "all"; updateCategorySelect(); render();
@@ -140,19 +160,19 @@ function bindEvents() {
 
 async function init() {
   try {
-    const [latestResponse, historyResponse, updateResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" }), fetch("data/daily-update-log.json", { cache: "no-store" })]);
+    const [latestResponse, historyResponse, updateResponse, realtimeResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" }), fetch("data/daily-update-log.json", { cache: "no-store" }), fetch("data/realtime/latest.json", { cache: "no-store" })]);
     if (!latestResponse.ok || !historyResponse.ok) throw new Error("ランキングデータを取得できませんでした。");
     const [latest, historyIndex] = await Promise.all([latestResponse.json(), historyResponse.json()]);
-    state.latest = latest;
+    state.dailyLatest = latest;
+    state.realtimeLatest = realtimeResponse.ok ? await realtimeResponse.json() : { categories: (latest.categories || []).filter((category) => [110854, 110845].includes(Number(category.id))), rankings: {} };
+    state.latest = state.dailyLatest;
     state.history = await loadHistory(historyIndex);
     state.updateLog = updateResponse.ok ? await updateResponse.json() : { days: [] };
     if (!state.latest.generatedAt) {
       $("#errorBox").hidden = false;
       $("#errorBox").textContent = "初回データ取得前です。GitHub Actionsを手動実行するとランキングが表示されます。";
     }
-    const sourceBuild = state.latest.sourceBuildAt ? ` · 楽天元データ ${state.latest.sourceBuildAt}` : "";
-    $("#updatedAt").textContent = state.latest.generatedAt ? `最終更新 ${dateTime.format(new Date(state.latest.generatedAt))} JST${sourceBuild}` : "初回取得待ち";
-    updateCategorySelect(); bindEvents(); render();
+    updateCategorySelect(); bindEvents(); renderUpdatedAt(); render();
   } catch (error) {
     $("#errorBox").hidden = false;
     $("#errorBox").textContent = error.message;

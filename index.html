@@ -12,7 +12,7 @@
     <div>
       <p class="eyebrow">RAKUTEN MARKET INTELLIGENCE</p>
       <h1>ランキングモニター</h1>
-      <p class="subtitle">Bra & ショーツ、17ジャンルの日次ランキング最大1000位を追跡</p>
+      <p id="subtitle" class="subtitle">Bra & ショーツ、17ジャンルの日次ランキング最大1000位を追跡</p>
     </div>
     <div class="updated" aria-live="polite">
       <span class="status-dot"></span>
@@ -21,12 +21,16 @@
   </header>
 
   <main>
+    <nav class="ranking-mode" aria-label="ランキング種別">
+      <button class="mode-button active" data-ranking-mode="daily" type="button">日榜 デイリー</button>
+      <button class="mode-button" data-ranking-mode="realtime" type="button"><span class="live-dot"></span>リアルタイム榜</button>
+    </nav>
     <section class="summary" aria-label="概要">
       <article><span>表示ジャンル</span><strong id="categoryCount">—</strong></article>
       <article><span>表示商品</span><strong id="itemCount">—</strong></article>
       <article><span>新規ランクイン</span><strong id="newCount">—</strong></article>
-      <article><span>データ期間</span><strong id="captureCount">—</strong></article>
-      <article><span>日榜首次切替</span><strong id="dailySwitch">—</strong><small id="dailySwitchDetail">—</small></article>
+      <article><span id="captureLabel">データ期間</span><strong id="captureCount">—</strong></article>
+      <article><span id="switchLabel">日榜首次切替</span><strong id="dailySwitch">—</strong><small id="dailySwitchDetail">—</small></article>
     </section>
 
     <section class="control-panel" aria-label="絞り込み">

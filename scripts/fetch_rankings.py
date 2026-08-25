@@ -388,6 +388,11 @@ def update_realtime(
     realtime_dir = output_dir / "realtime"
     latest_path = realtime_dir / "latest.json"
     previous = load_json(latest_path, {"rankings": {}})
+    previous_ranks = {
+        genre_id: {item["itemCode"]: item["rank"] for item in items if item.get("itemCode")}
+        for genre_id, items in previous.get("rankings", {}).items()
+    }
+    annotate_changes(rankings, previous_ranks)
     event = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
         "sourceBuildAt": source_build_at,
