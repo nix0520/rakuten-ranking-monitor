@@ -1,4 +1,4 @@
-const state = { latest: null, history: null, group: "bra", category: "all", query: "", days: 7, rows: [] };
+const state = { latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [] };
 const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -68,7 +68,7 @@ function rowTemplate(row) {
     <td><div class="rank"><span class="rank-number">${row.rank}</span>${movement(row)}</div></td>
     <td><div class="product">${image}<div><a class="product-name" href="${escapeHtml(row.itemUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.itemName)}</a><div class="meta">${escapeHtml(row.itemCode)}</div><span class="genre-chip">${escapeHtml(row.category.name)}</span></div></div></td>
     <td><a class="shop-link" href="${escapeHtml(row.shopUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.shopName)}</a></td>
-    <td class="price">${yen.format(row.itemPrice)}</td>
+    <td class="price">${yen.format(row.itemPrice)}${row.pointRate > 1 ? `<span class="promo">ポイント${row.pointRate}倍</span>` : ""}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}</td>
     <td><span class="rating">★ ${Number(row.reviewAverage).toFixed(2)}</span><span class="review-count">${Number(row.reviewCount).toLocaleString("ja-JP")}件</span></td>
     <td>${sparkline(trendPoints(row.category.id, row.itemCode))}</td>
   </tr>`;
@@ -90,6 +90,10 @@ function render() {
   $("#newCount").textContent = state.rows.filter((row) => row.isNew).length.toLocaleString("ja-JP");
   $("#categoryCount").textContent = selectedCategories().length;
   $("#captureCount").textContent = `${state.history?.captures?.length || 0} 回`;
+  const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(new Date());
+  const updateDay = (state.updateLog?.days || []).find((day) => day.date === today) || state.updateLog?.days?.at(-1);
+  $("#dailySwitch").textContent = updateDay?.firstUpdateDetectedAt ? dateTime.format(new Date(updateDay.firstUpdateDetectedAt)) : "判定待ち";
+  $("#dailySwitchDetail").textContent = updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "09:50から観測";
   const selected = selectedCategories();
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${state.group === "bra" ? "Bra" : "ショーツ"}グループ · ${selected.length}ジャンル`;
 }
@@ -99,9 +103,9 @@ function csvCell(value) {
 }
 
 function exportCsv() {
-  const headers = ["group", "genreId", "genreName", "rank", "previousRank", "change", "new", "itemCode", "itemName", "shopName", "price", "reviewAverage", "reviewCount", "itemUrl"];
+  const headers = ["group", "genreId", "genreName", "rank", "previousRank", "change", "new", "itemCode", "itemName", "shopName", "price", "pointRate", "promotionHints", "couponMentioned", "reviewAverage", "reviewCount", "itemUrl"];
   const exportRows = filteredRows();
-  const lines = [headers, ...exportRows.map((row) => [row.category.group, row.category.id, row.category.name, row.rank, row.previousRank, row.change, row.isNew, row.itemCode, row.itemName, row.shopName, row.itemPrice, row.reviewAverage, row.reviewCount, row.itemUrl])];
+  const lines = [headers, ...exportRows.map((row) => [row.category.group, row.category.id, row.category.name, row.rank, row.previousRank, row.change, row.isNew, row.itemCode, row.itemName, row.shopName, row.itemPrice, row.pointRate, (row.promotionHints || []).join(" | "), row.couponMentioned, row.reviewAverage, row.reviewCount, row.itemUrl])];
   const blob = new Blob(["\ufeff" + lines.map((line) => line.map(csvCell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const anchor = document.createElement("a");
   anchor.href = URL.createObjectURL(blob);
@@ -136,11 +140,12 @@ function bindEvents() {
 
 async function init() {
   try {
-    const [latestResponse, historyResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" })]);
+    const [latestResponse, historyResponse, updateResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" }), fetch("data/daily-update-log.json", { cache: "no-store" })]);
     if (!latestResponse.ok || !historyResponse.ok) throw new Error("ランキングデータを取得できませんでした。");
     const [latest, historyIndex] = await Promise.all([latestResponse.json(), historyResponse.json()]);
     state.latest = latest;
     state.history = await loadHistory(historyIndex);
+    state.updateLog = updateResponse.ok ? await updateResponse.json() : { days: [] };
     if (!state.latest.generatedAt) {
       $("#errorBox").hidden = false;
       $("#errorBox").textContent = "初回データ取得前です。GitHub Actionsを手動実行するとランキングが表示されます。";

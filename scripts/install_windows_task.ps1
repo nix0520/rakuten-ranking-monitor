@@ -30,27 +30,53 @@ if ([string]::IsNullOrWhiteSpace($applicationId) -or [string]::IsNullOrWhiteSpac
 $env:RAKUTEN_APPLICATION_ID = $applicationId.Trim()
 $env:RAKUTEN_ACCESS_KEY = $accessKey.Trim()
 
-$tokyo = [TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
-$todayInTokyo = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow, "Tokyo Standard Time").Date
-$tokyoTime = [DateTime]::SpecifyKind($todayInTokyo.AddHours(18).AddMinutes(15), [DateTimeKind]::Unspecified)
-$utcTime = [TimeZoneInfo]::ConvertTimeToUtc($tokyoTime, $tokyo)
-$localTime = [TimeZoneInfo]::ConvertTimeFromUtc($utcTime, [TimeZoneInfo]::Local)
-$trigger = New-ScheduledTaskTrigger -Daily -At $localTime
+function Convert-JstTimeToLocal {
+    param([int]$Hour, [int]$Minute)
+    $tokyo = [TimeZoneInfo]::FindSystemTimeZoneById("Tokyo Standard Time")
+    $day = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow, "Tokyo Standard Time").Date
+    $jst = [DateTime]::SpecifyKind($day.AddHours($Hour).AddMinutes($Minute), [DateTimeKind]::Unspecified)
+    $utc = [TimeZoneInfo]::ConvertTimeToUtc($jst, $tokyo)
+    return [TimeZoneInfo]::ConvertTimeFromUtc($utc, [TimeZoneInfo]::Local)
+}
 
-$fetchScript = Join-Path $PSScriptRoot "windows_fetch.ps1"
-$quotedScript = '"' + $fetchScript + '"'
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File $quotedScript"
-$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -ExecutionTimeLimit (New-TimeSpan -Hours 2)
+function New-RankingAction {
+    param([string]$Mode)
+    $fetchScript = Join-Path $PSScriptRoot "windows_fetch.ps1"
+    $quotedScript = '"' + $fetchScript + '"'
+    return New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File $quotedScript -Mode $Mode"
+}
+
+$probeTriggers = @(
+    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 9 50)
+    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 10 0)
+    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 10 10)
+)
+$dailyTrigger = New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 10 30)
+$realtimeStart = Convert-JstTimeToLocal 0 5
+$realtimeTrigger = New-ScheduledTaskTrigger -Once -At $realtimeStart `
+    -RepetitionInterval (New-TimeSpan -Minutes 20) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
+
+$settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
-$task = New-ScheduledTask -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Description "Fetch the daily Rakuten rankings at 18:15 JST."
 
-Register-ScheduledTask -TaskName "Rakuten Ranking Monitor" -InputObject $task -Force | Out-Null
+$probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Observe the Rakuten daily ranking rollover at 09:50, 10:00 and 10:10 JST."
+$dailyTask = New-ScheduledTask -Action (New-RankingAction "daily") -Trigger $dailyTrigger -Settings $settings -Principal $principal -Description "Fetch all 17 daily rankings at 10:30 JST."
+$realtimeTask = New-ScheduledTask -Action (New-RankingAction "realtime") -Trigger $realtimeTrigger -Settings $settings -Principal $principal -Description "Fetch the two core realtime rankings every 20 minutes."
+
+Unregister-ScheduledTask -TaskName "Rakuten Ranking Monitor" -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName "Rakuten Ranking Daily Probe" -InputObject $probeTask -Force | Out-Null
+Register-ScheduledTask -TaskName "Rakuten Ranking Daily" -InputObject $dailyTask -Force | Out-Null
+Register-ScheduledTask -TaskName "Rakuten Ranking Realtime" -InputObject $realtimeTask -Force | Out-Null
 
 Write-Host "Scheduled task installed successfully."
-Write-Host "JST schedule: daily at 18:15"
-Write-Host "Running the first fetch now..."
+Write-Host "JST daily probes: 09:50, 10:00, 10:10"
+Write-Host "JST full daily fetch: 10:30"
+Write-Host "Realtime core rankings: every 20 minutes"
+Write-Host "Running a lightweight daily probe now..."
 
-& (Join-Path $PSScriptRoot "windows_fetch.ps1")
+& (Join-Path $PSScriptRoot "windows_fetch.ps1") -Mode "daily-probe"
 if ($LASTEXITCODE -ne 0) {
     throw "The first ranking fetch failed."
 }

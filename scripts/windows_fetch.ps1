@@ -1,5 +1,7 @@
 param(
-    [switch]$SkipPull
+    [switch]$SkipPull,
+    [ValidateSet("daily", "daily-probe", "realtime")]
+    [string]$Mode = "daily"
 )
 
 Set-StrictMode -Version Latest
@@ -51,9 +53,9 @@ if (-not $SkipPull) {
     Invoke-CheckedCommand git.exe pull --ff-only origin main
 }
 
-Invoke-CheckedCommand py.exe -3 scripts\fetch_rankings.py
+Invoke-CheckedCommand py.exe -3 scripts\fetch_rankings.py --mode $Mode
 
-$changes = (& git.exe status --porcelain -- data/latest.json data/history.json data/history) -join ""
+$changes = (& git.exe status --porcelain -- data) -join ""
 if ($LASTEXITCODE -ne 0) {
     throw "Unable to inspect ranking data changes."
 }
@@ -64,9 +66,9 @@ if ([string]::IsNullOrWhiteSpace($changes)) {
 
 Invoke-CheckedCommand git.exe config user.name "rakuten-ranking-bot"
 Invoke-CheckedCommand git.exe config user.email "rakuten-ranking-bot@users.noreply.github.com"
-Invoke-CheckedCommand git.exe add -- data/latest.json data/history.json data/history
+Invoke-CheckedCommand git.exe add -- data
 $timestamp = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow, "Tokyo Standard Time").ToString("yyyy-MM-dd HH:mm 'JST'")
-Invoke-CheckedCommand git.exe commit -m "data: refresh Rakuten rankings ($timestamp)"
+Invoke-CheckedCommand git.exe commit -m "data: refresh Rakuten $Mode rankings ($timestamp)"
 Invoke-CheckedCommand git.exe push origin HEAD:main
 
-Write-Host "Ranking data was fetched and pushed successfully."
+Write-Host "Rakuten $Mode data was fetched and pushed successfully."
