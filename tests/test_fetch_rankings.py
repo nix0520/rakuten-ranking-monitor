@@ -193,6 +193,18 @@ class RankingTests(unittest.TestCase):
             self.assertEqual(latest["rankings"]["110854"][0]["change"], 3)
             self.assertFalse(latest["rankings"]["110854"][0]["isNew"])
 
+    def test_realtime_mode_includes_all_17_genres(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = fetch.parse_args([
+                "--fixture", str(ROOT / "tests" / "fixtures" / "api_page.json"),
+                "--output-dir", directory,
+                "--mode", "realtime",
+            ])
+            fetch.run(args)
+            latest = json.loads((Path(directory) / "realtime" / "latest.json").read_text(encoding="utf-8"))
+            self.assertEqual(len(latest["categories"]), 17)
+            self.assertEqual(len(latest["rankings"]), 17)
+
 
 if __name__ == "__main__":
     unittest.main()
