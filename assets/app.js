@@ -95,7 +95,7 @@ function render() {
   const updateDay = (state.updateLog?.days || []).find((day) => day.date === today) || state.updateLog?.days?.at(-1);
   $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜首次切替";
   $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (updateDay?.firstUpdateDetectedAt ? dateTime.format(new Date(updateDay.firstUpdateDetectedAt)) : "判定待ち");
-  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "09:50から観測");
+  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "09:50 / 19:50から観測");
   const selected = selectedCategories();
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${state.group === "bra" ? "Bra" : "ショーツ"}グループ · ${selected.length}ジャンル`;
 }
