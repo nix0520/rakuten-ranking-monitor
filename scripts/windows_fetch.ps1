@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$mutex = New-Object System.Threading.Mutex($false, "Local\\RakutenRankingMonitorFetch")
+$mutex = New-Object System.Threading.Mutex($false, "RakutenRankingMonitorFetch")
 $mutexAcquired = $false
 try {
     try {
