@@ -79,7 +79,7 @@ Register-ScheduledTask -TaskName "Rakuten Ranking Realtime" -InputObject $realti
 Write-Host "Scheduled task installed successfully."
 Write-Host "JST daily probes: 09:50, 10:00, 10:10, 19:50, 20:00, 20:10"
 Write-Host "JST full daily fetches: 10:30, 20:30"
-Write-Host "Realtime 17-genre rankings: every 20 minutes"
+Write-Host "JST realtime 17-genre rankings: every 20 minutes at :05, :25, :45"
 Write-Host "Running a lightweight daily probe now..."
 
 & (Join-Path $PSScriptRoot "windows_fetch.ps1") -Mode "daily-probe"

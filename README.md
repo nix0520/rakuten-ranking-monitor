@@ -48,11 +48,11 @@ Git for WindowsとPython 3をインストールし、GitHubへ認証済みの状
 powershell -ExecutionPolicy Bypass -File .\scripts\install_windows_task.ps1
 ```
 
-画面上でApplication IDとAccess Keyを入力すると、認証情報をWindowsユーザー環境変数に保存し、タスクスケジューラへ次の3タスクを登録します。時刻はPCのローカルタイムゾーンへ自動換算されます。
+画面上でApplication IDとAccess Keyを入力すると、認証情報をWindowsユーザー環境変数に保存し、タスクスケジューラへ次の3タスクを登録します。以下はすべて日本時間（JST）で、PCのローカルタイムゾーンへ自動換算されます。09:50 / 10:00 / 10:10などは日榜の切替観測であり、リアルタイム榜の追加取得ではありません。
 
 - `Rakuten Ranking Daily Probe`: 09:50 / 10:00 / 10:10 / 19:50 / 20:00 / 20:10 JST、17ジャンル上位30位で日榜切替を観測
 - `Rakuten Ranking Daily`: 10:30 / 20:30 JST、17ジャンル最大1000位を取得
-- `Rakuten Ranking Realtime`: 20分間隔、17ジャンル上位100位を取得
+- `Rakuten Ranking Realtime`: 日本時間の毎時05分・25分・45分（20分間隔）、17ジャンル上位100位を取得
 
 タスクはログイン中のみ実行され、PCの電源とプロキシ接続が必要です。実行時は最新の`main`を取得し、変更された`data/`をコミット・プッシュします。そのプッシュを受けてGitHub ActionsがPagesを公開します。
 
