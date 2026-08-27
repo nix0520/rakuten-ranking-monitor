@@ -7,6 +7,19 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$mutex = New-Object System.Threading.Mutex($false, "RakutenRankingMonitorFetch")
+$mutexAcquired = $false
+try {
+    try {
+        $mutexAcquired = $mutex.WaitOne((New-TimeSpan -Hours 2))
+    }
+    catch [System.Threading.AbandonedMutexException] {
+        $mutexAcquired = $true
+    }
+    if (-not $mutexAcquired) {
+        throw "Timed out waiting for another ranking fetch to finish."
+    }
+
 function Invoke-CheckedCommand {
     param(
         [Parameter(Mandatory = $true)]
@@ -50,7 +63,7 @@ $env:RAKUTEN_APPLICATION_ID = $applicationId.Trim()
 $env:RAKUTEN_ACCESS_KEY = $accessKey.Trim()
 
 if (-not $SkipPull) {
-    Invoke-CheckedCommand git.exe pull --ff-only origin main
+    Invoke-CheckedCommand git.exe pull --rebase origin main
 }
 
 Invoke-CheckedCommand py.exe -3 scripts\fetch_rankings.py --mode $Mode
@@ -61,7 +74,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 if ([string]::IsNullOrWhiteSpace($changes)) {
     Write-Host "No ranking data changed. Nothing to publish."
-    exit 0
+    return
 }
 
 Invoke-CheckedCommand git.exe config user.name "rakuten-ranking-bot"
@@ -69,6 +82,28 @@ Invoke-CheckedCommand git.exe config user.email "rakuten-ranking-bot@users.norep
 Invoke-CheckedCommand git.exe add -- data
 $timestamp = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow, "Tokyo Standard Time").ToString("yyyy-MM-dd HH:mm 'JST'")
 Invoke-CheckedCommand git.exe commit -m "data: refresh Rakuten $Mode rankings ($timestamp)"
-Invoke-CheckedCommand git.exe push origin HEAD:main
+$published = $false
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+    & git.exe push origin HEAD:main
+    if ($LASTEXITCODE -eq 0) {
+        $published = $true
+        break
+    }
+    if ($attempt -lt 3) {
+        Write-Host "Push raced with another update; rebasing and retrying ($attempt/3)..."
+        Start-Sleep -Seconds 2
+        Invoke-CheckedCommand git.exe pull --rebase origin main
+    }
+}
+if (-not $published) {
+    throw "Unable to push ranking data after 3 attempts."
+}
 
 Write-Host "Rakuten $Mode data was fetched and pushed successfully."
+}
+finally {
+    if ($mutexAcquired) {
+        $mutex.ReleaseMutex()
+    }
+    $mutex.Dispose()
+}
