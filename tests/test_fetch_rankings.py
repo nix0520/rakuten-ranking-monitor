@@ -171,6 +171,32 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(calls, [(1, "realtime"), (2, "realtime"), (3, "realtime"), (4, "realtime")])
         self.assertEqual(len(items), 100)
 
+    def test_source_date_parses_rakuten_rfc2822_timestamp(self):
+        self.assertEqual(
+            fetch.source_date("Wed, 26 Aug 2026 00:00:00 +0900"),
+            "2026-08-26",
+        )
+
+    def test_rank_change_alone_does_not_mark_daily_rollover(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            first = datetime(2026, 8, 27, 9, 50, tzinfo=fetch.JST)
+            fetch.update_daily_observations(
+                output,
+                {"110854": [{"itemCode": "a", "rank": 2}]},
+                first,
+                "Wed, 26 Aug 2026 00:00:00 +0900",
+            )
+            fetch.update_daily_observations(
+                output,
+                {"110854": [{"itemCode": "a", "rank": 1}]},
+                first.replace(hour=10, minute=0),
+                "Wed, 26 Aug 2026 00:00:00 +0900",
+            )
+            log = json.loads((output / "daily-update-log.json").read_text(encoding="utf-8"))
+            self.assertIsNone(log["days"][0]["firstUpdateDetectedAt"])
+            self.assertEqual(log["days"][0]["aggregateDate"], "2026-08-26")
+
     def test_daily_observation_detects_first_change_once(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
