@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from email.utils import parsedate_to_datetime
 import os
 import random
 import re
@@ -284,10 +285,16 @@ def source_date(value: str | None) -> str | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(JST).date().isoformat()
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        match = re.search(r"\d{4}-\d{2}-\d{2}", value)
-        return match.group(0) if match else None
+        try:
+            parsed = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            match = re.search(r"\d{4}-\d{2}-\d{2}", value)
+            return match.group(0) if match else None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=JST)
+    return parsed.astimezone(JST).date().isoformat()
 
 
 def update_daily_observations(
@@ -311,14 +318,28 @@ def update_daily_observations(
 
     ranks = compact_ranks(rankings)
     previous_ranks = previous_observation.get("ranks", {}) if previous_observation else {}
+    aggregate_date = source_date(source_build_at)
+    previous_aggregate_date = (
+        previous_observation.get("aggregateDate") if previous_observation else None
+    )
     changed = bool(previous_observation) and (
         previous_observation.get("sourceBuildAt") != source_build_at or previous_ranks != ranks
     )
-    if changed and not day.get("firstUpdateDetectedAt"):
+
+    # Older observations could mark ordinary rank fluctuations as a daily rollover.
+    # Only an API aggregate date matching the current JST date proves the new daily list exists.
+    valid_update_seen = any(
+        observation.get("aggregateDate") == today
+        for observation in day.get("observations", [])
+    )
+    if not valid_update_seen:
+        day["firstUpdateDetectedAt"] = None
+    source_rolled_over = aggregate_date == today and previous_aggregate_date != aggregate_date
+    if source_rolled_over and not day.get("firstUpdateDetectedAt"):
         day["firstUpdateDetectedAt"] = captured_at.isoformat(timespec="seconds")
     observation = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
-        "aggregateDate": source_date(source_build_at),
+        "aggregateDate": aggregate_date,
         "pageUpdatedAt": source_build_at,
         "changed": changed,
         "changes": ranking_diff(ranks, previous_ranks) if previous_observation else {},
