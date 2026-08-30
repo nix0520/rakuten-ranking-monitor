@@ -212,19 +212,32 @@ def load_history_captures(output_dir: Path, history: dict[str, Any]) -> list[dic
             continue
         capture = load_json(output_dir / str(relative_path), None)
         if isinstance(capture, dict) and isinstance(capture.get("genres"), dict):
+            if not capture.get("aggregateDate") and entry.get("date"):
+                capture["aggregateDate"] = entry["date"]
             captures.append(capture)
     return sorted(captures, key=lambda capture: capture.get("capturedAt", ""))
 
 
+def capture_aggregate_date(capture: dict[str, Any]) -> str | None:
+    aggregate_date = source_date(capture.get("aggregateDate"))
+    if aggregate_date:
+        return aggregate_date
+    when = capture_datetime(capture)
+    return when.date().isoformat() if when is not None else None
+
+
 def previous_daily_ranks(
-    captures: list[dict[str, Any]], captured_at: datetime
+    captures: list[dict[str, Any]],
+    captured_at: datetime,
+    aggregate_date: str | None = None,
 ) -> dict[str, dict[str, int]]:
-    current_date = captured_at.astimezone(JST).date()
+    current_date = aggregate_date or captured_at.astimezone(JST).date().isoformat()
     candidates = [
         capture
         for capture in captures
-        if (when := capture_datetime(capture)) is not None and when.date() < current_date
+        if (day := capture_aggregate_date(capture)) is not None and day < current_date
     ]
+    candidates.sort(key=lambda capture: capture_aggregate_date(capture) or "")
     return candidates[-1].get("genres", {}) if candidates else {}
 
 
@@ -306,10 +319,6 @@ def update_daily_observations(
     path = output_dir / "daily-update-log.json"
     log = load_json(path, {"days": []})
     days = [day for day in log.get("days", []) if isinstance(day, dict)]
-    previous_observation = next(
-        (observation for day in reversed(days) for observation in reversed(day.get("observations", []))),
-        None,
-    )
     today = captured_at.date().isoformat()
     day = next((entry for entry in days if entry.get("date") == today), None)
     if day is None:
@@ -317,35 +326,58 @@ def update_daily_observations(
         days.append(day)
 
     ranks = compact_ranks(rankings)
-    previous_ranks = previous_observation.get("ranks", {}) if previous_observation else {}
     aggregate_date = source_date(source_build_at)
-    previous_aggregate_date = (
-        previous_observation.get("aggregateDate") if previous_observation else None
-    )
+    all_observations = [
+        observation
+        for entry in days
+        for observation in entry.get("observations", [])
+        if isinstance(observation, dict)
+    ]
+    previous_observation = all_observations[-1] if all_observations else None
+    previous_ranks = previous_observation.get("ranks", {}) if previous_observation else {}
     changed = bool(previous_observation) and (
-        previous_observation.get("sourceBuildAt") != source_build_at or previous_ranks != ranks
+        previous_observation.get("pageUpdatedAt") != source_build_at
+        or previous_ranks != ranks
     )
 
-    # Older observations could mark ordinary rank fluctuations as a daily rollover.
-    # Only an API aggregate date matching the current JST date proves the new daily list exists.
+    # A rollover is proven only once: when the API aggregate date first matches today.
     valid_update_seen = any(
         observation.get("aggregateDate") == today
         for observation in day.get("observations", [])
     )
+    source_rolled_over = aggregate_date == today and not valid_update_seen
     if not valid_update_seen:
         day["firstUpdateDetectedAt"] = None
-    source_rolled_over = aggregate_date == today and previous_aggregate_date != aggregate_date
-    if source_rolled_over and not day.get("firstUpdateDetectedAt"):
+    if source_rolled_over:
         day["firstUpdateDetectedAt"] = captured_at.isoformat(timespec="seconds")
+
+    # Daily movement must compare the new aggregate date with a prior aggregate date.
+    # Repeated probes from the same day are observations only and never become baselines.
+    prior_daily_observation = next(
+        (
+            observation
+            for observation in reversed(all_observations)
+            if observation.get("aggregateDate")
+            and aggregate_date
+            and observation.get("aggregateDate") < aggregate_date
+        ),
+        None,
+    )
+    changes = (
+        ranking_diff(ranks, prior_daily_observation.get("ranks", {}))
+        if source_rolled_over and prior_daily_observation
+        else {}
+    )
     observation = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
         "aggregateDate": aggregate_date,
         "pageUpdatedAt": source_build_at,
         "changed": changed,
-        "changes": ranking_diff(ranks, previous_ranks) if previous_observation else {},
+        "dailyRollover": source_rolled_over,
+        "changes": changes,
         "ranks": ranks,
     }
-    day["aggregateDate"] = observation["aggregateDate"]
+    day["aggregateDate"] = aggregate_date
     day["pageUpdatedAt"] = source_build_at
     day["observations"].append(observation)
     cutoff = captured_at.date() - timedelta(days=HISTORY_DAYS - 1)
@@ -439,9 +471,11 @@ def update_history(
     captures: list[dict[str, Any]],
     rankings: dict[str, list[dict[str, Any]]],
     captured_at: datetime,
+    aggregate_date: str,
 ) -> dict[str, Any]:
     current_capture = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
+        "aggregateDate": aggregate_date,
         "genres": {
             genre_id: {item["itemCode"]: item["rank"] for item in items if item["itemCode"]}
             for genre_id, items in rankings.items()
@@ -451,9 +485,9 @@ def update_history(
     cutoff_date = current_date - timedelta(days=HISTORY_DAYS - 1)
     by_date: dict[str, dict[str, Any]] = {}
     for existing in [*captures, current_capture]:
-        when = capture_datetime(existing)
-        if when is not None and cutoff_date <= when.date() <= current_date:
-            by_date[when.date().isoformat()] = existing
+        day = capture_aggregate_date(existing)
+        if day and cutoff_date.isoformat() <= day <= current_date.isoformat():
+            by_date[day] = existing
 
     history_dir = output_dir / "history"
     history_dir.mkdir(parents=True, exist_ok=True)
@@ -537,19 +571,35 @@ def run(args: argparse.Namespace) -> None:
         print(f"Saved daily update observation at {captured_at.isoformat()}")
         return
 
+    aggregate_date = source_date(source_build_at)
+    today = captured_at.date().isoformat()
+    if aggregate_date != today:
+        print(
+            f"Daily API has not rolled over ({aggregate_date or 'unknown'}); "
+            "leaving the published daily ranking and history unchanged."
+        )
+        return
+
     latest_path = output_dir / "latest.json"
     history_path = output_dir / "history.json"
     history = load_json(history_path, {"captures": []})
     history_captures = load_history_captures(output_dir, history)
-    annotate_changes(rankings, previous_daily_ranks(history_captures, captured_at))
+    annotate_changes(
+        rankings,
+        previous_daily_ranks(history_captures, captured_at, aggregate_date),
+    )
     latest = {
         "generatedAt": captured_at.isoformat(),
+        "aggregateDate": aggregate_date,
         "sourceBuildAt": source_build_at,
         "categories": categories,
         "rankings": rankings,
     }
     write_json(latest_path, latest)
-    write_json(history_path, update_history(output_dir, history_captures, rankings, captured_at))
+    write_json(
+        history_path,
+        update_history(output_dir, history_captures, rankings, captured_at, aggregate_date),
+    )
     print(f"Saved {sum(map(len, rankings.values()))} ranking rows at {captured_at.isoformat()}")
 
 
