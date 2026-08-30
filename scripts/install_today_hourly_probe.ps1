@@ -19,18 +19,22 @@ $nowJst = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId(
     "Tokyo Standard Time"
 )
 $firstDayJst = $nowJst.Date.AddDays(1)
-$plannedJst = @(
+$segments = @(
     0..2 |
         ForEach-Object {
             $dayJst = $firstDayJst.AddDays($_)
-            0..23 |
-                Where-Object { $_ -notin @(10, 20) } |
-                ForEach-Object {
-                    [DateTime]::SpecifyKind(
-                        $dayJst.AddHours($_),
-                        [DateTimeKind]::Unspecified
-                    )
-                }
+            [PSCustomObject]@{
+                Start = [DateTime]::SpecifyKind($dayJst, [DateTimeKind]::Unspecified)
+                Duration = New-TimeSpan -Hours 9 -Minutes 59
+            }
+            [PSCustomObject]@{
+                Start = [DateTime]::SpecifyKind($dayJst.AddHours(11), [DateTimeKind]::Unspecified)
+                Duration = New-TimeSpan -Hours 8 -Minutes 59
+            }
+            [PSCustomObject]@{
+                Start = [DateTime]::SpecifyKind($dayJst.AddHours(21), [DateTimeKind]::Unspecified)
+                Duration = New-TimeSpan -Hours 2 -Minutes 59
+            }
         }
 )
 
@@ -40,9 +44,12 @@ Unregister-ScheduledTask -TaskName $oldTaskName -Confirm:$false -ErrorAction Sil
 Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
 
 $triggers = @(
-    $plannedJst |
+    $segments |
         ForEach-Object {
-            New-ScheduledTaskTrigger -Once -At (Convert-JstDateTimeToLocal $_)
+            New-ScheduledTaskTrigger -Once `
+                -At (Convert-JstDateTimeToLocal $_.Start) `
+                -RepetitionInterval (New-TimeSpan -Hours 1) `
+                -RepetitionDuration $_.Duration
         }
 )
 $quotedScript = '"' + $fetchScript + '"'
@@ -61,5 +68,6 @@ Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 Write-Host "Three full JST probe days installed:"
 Write-Host "  Dates: $($firstDayJst.ToString('yyyy-MM-dd')) through $($lastDayJst.ToString('yyyy-MM-dd'))"
 Write-Host "  Hourly: every full hour from 00:00 through 23:00 JST"
+Write-Host "  Scheduled trigger nodes: $($triggers.Count) (3 repeating segments per day)"
 Write-Host "  10:00 and 20:00 use the existing daily-probe task to avoid duplicate runs."
 Write-Host "Existing extra probes at 09:50, 10:10, 19:50 and 20:10 remain unchanged."
