@@ -25,15 +25,15 @@ $segments = @(
             $dayJst = $firstDayJst.AddDays($_)
             [PSCustomObject]@{
                 Start = [DateTime]::SpecifyKind($dayJst, [DateTimeKind]::Unspecified)
-                Duration = New-TimeSpan -Hours 9 -Minutes 59
+                Duration = (New-TimeSpan -Hours 9 -Minutes 59)
             }
             [PSCustomObject]@{
                 Start = [DateTime]::SpecifyKind($dayJst.AddHours(11), [DateTimeKind]::Unspecified)
-                Duration = New-TimeSpan -Hours 8 -Minutes 59
+                Duration = (New-TimeSpan -Hours 8 -Minutes 59)
             }
             [PSCustomObject]@{
                 Start = [DateTime]::SpecifyKind($dayJst.AddHours(21), [DateTimeKind]::Unspecified)
-                Duration = New-TimeSpan -Hours 2 -Minutes 59
+                Duration = (New-TimeSpan -Hours 2 -Minutes 59)
             }
         }
 )
