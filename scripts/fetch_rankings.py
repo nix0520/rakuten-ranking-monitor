@@ -573,7 +573,7 @@ def run(args: argparse.Namespace) -> None:
 
     aggregate_date = source_date(source_build_at)
     today = captured_at.date().isoformat()
-    if aggregate_date != today:
+    if not args.fixture and aggregate_date != today:
         print(
             f"Daily API has not rolled over ({aggregate_date or 'unknown'}); "
             "leaving the published daily ranking and history unchanged."
