@@ -23,10 +23,11 @@ $plannedJst = @(
     0..2 |
         ForEach-Object {
             $dayJst = $firstDayJst.AddDays($_)
-            11..19 |
+            0..23 |
+                Where-Object { $_ -notin @(10, 20) } |
                 ForEach-Object {
                     [DateTime]::SpecifyKind(
-                        $dayJst.AddHours($_).AddMinutes(10),
+                        $dayJst.AddHours($_),
                         [DateTimeKind]::Unspecified
                     )
                 }
@@ -59,5 +60,6 @@ $task = New-ScheduledTask -Action $action -Trigger $triggers -Settings $settings
 Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 Write-Host "Three full JST probe days installed:"
 Write-Host "  Dates: $($firstDayJst.ToString('yyyy-MM-dd')) through $($lastDayJst.ToString('yyyy-MM-dd'))"
-Write-Host "  Hourly: 11:10, 12:10, 13:10, 14:10, 15:10, 16:10, 17:10, 18:10, 19:10"
-Write-Host "Existing daily probes at 09:50, 10:00, 10:10, 19:50, 20:00 and 20:10 remain unchanged."
+Write-Host "  Hourly: every full hour from 00:00 through 23:00 JST"
+Write-Host "  10:00 and 20:00 use the existing daily-probe task to avoid duplicate runs."
+Write-Host "Existing extra probes at 09:50, 10:10, 19:50 and 20:10 remain unchanged."
