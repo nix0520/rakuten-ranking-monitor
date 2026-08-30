@@ -127,6 +127,25 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(rankings["110854"][0]["change"], 4)
         self.assertTrue(rankings["110854"][1]["isNew"])
 
+    def test_previous_daily_ranks_uses_aggregate_date_not_capture_day(self):
+        current = datetime(2026, 8, 30, 20, 30, tzinfo=fetch.JST)
+        captures = [
+            {
+                "capturedAt": current.replace(hour=10).isoformat(),
+                "aggregateDate": "2026-08-29",
+                "genres": {"110854": {"shop:a": 7}},
+            },
+            {
+                "capturedAt": current.replace(hour=19).isoformat(),
+                "aggregateDate": "2026-08-30",
+                "genres": {"110854": {"shop:a": 2}},
+            },
+        ]
+        previous = fetch.previous_daily_ranks(
+            captures, current, aggregate_date="2026-08-30"
+        )
+        self.assertEqual(previous["110854"]["shop:a"], 7)
+
     def test_history_is_partitioned_by_date_and_retained_for_30_days(self):
         now = datetime(2026, 8, 20, 12, 15, tzinfo=fetch.JST)
         captures = [
@@ -136,7 +155,9 @@ class RankingTests(unittest.TestCase):
         rankings = {"110854": [{"itemCode": "shop:a", "rank": 3}]}
         with tempfile.TemporaryDirectory() as directory:
             output_dir = Path(directory)
-            updated = fetch.update_history(output_dir, captures, rankings, now)
+            updated = fetch.update_history(
+                output_dir, captures, rankings, now, now.date().isoformat()
+            )
             self.assertEqual(len(updated["captures"]), 2)
             self.assertEqual(updated["captures"][-1]["file"], "history/2026-08-20.json")
             current = json.loads((output_dir / "history" / "2026-08-20.json").read_text(encoding="utf-8"))
@@ -206,7 +227,13 @@ class RankingTests(unittest.TestCase):
             fetch.update_daily_observations(output, {"110854": [{"itemCode": "a", "rank": 1}]}, first.replace(minute=10, hour=10), "2026-08-25T10:00:00+09:00")
             log = json.loads((output / "daily-update-log.json").read_text(encoding="utf-8"))
             self.assertEqual(log["days"][0]["firstUpdateDetectedAt"], "2026-08-25T10:00:00+09:00")
-            self.assertEqual(log["days"][0]["observations"][1]["changes"]["110854"]["moved"][0]["change"], 1)
+            observations = log["days"][0]["observations"]
+            self.assertTrue(observations[1]["dailyRollover"])
+            self.assertEqual(
+                observations[1]["changes"]["110854"]["moved"][0]["change"], 1
+            )
+            self.assertFalse(observations[2]["dailyRollover"])
+            self.assertEqual(observations[2]["changes"], {})
 
     def test_realtime_latest_contains_previous_interval_change(self):
         with tempfile.TemporaryDirectory() as directory:
