@@ -3,8 +3,82 @@ const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 
+const KEYWORD_PHRASES = [
+  "ノンワイヤー", "ナイトブラ", "脇高", "補正下着", "スポーツブラ", "ブラトップ",
+  "シームレス", "大きいサイズ", "小胸", "谷間", "盛れる", "育乳", "授乳",
+  "マタニティ", "ストラップレス", "チューブトップ", "吸水", "サニタリー",
+  "tバック", "ボクサー", "ヒップアップ", "上下セット", "レース", "綿100%",
+  "オーガニックコットン", "接触冷感", "吸汗速乾", "抗菌防臭", "透け防止"
+];
+const KEYWORD_STOP_WORDS = new Set([
+  "楽天", "市場", "公式", "送料無料", "送料込", "商品", "人気", "おすすめ", "ランキング",
+  "レディース", "女性", "インナー", "ランジェリー", "下着", "ブラ", "ブラジャー",
+  "ショーツ", "パンツ", "新作", "定番", "セール", "クーポン", "ポイント", "対象",
+  "限定", "メール便", "ネコポス", "即納", "予約", "税込", "価格"
+].map((word) => word.toLocaleLowerCase("ja")));
+
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+}
+
+function extractKeywords(value = "") {
+  const normalized = String(value).normalize("NFKC").toLocaleLowerCase("ja");
+  const keywords = new Set();
+  KEYWORD_PHRASES.forEach((phrase) => {
+    const keyword = phrase.toLocaleLowerCase("ja");
+    if (normalized.includes(keyword)) keywords.add(keyword);
+  });
+  const tokens = normalized.match(/[a-z][a-z0-9+.-]{1,}|[ァ-ヶー]{2,}|[一-龯々]{2,8}/giu) || [];
+  tokens.forEach((rawToken) => {
+    const token = rawToken.replace(/^[ー.-]+|[ー.-]+$/g, "");
+    if (
+      token.length < 2 ||
+      token.length > 14 ||
+      KEYWORD_STOP_WORDS.has(token) ||
+      /^\d+(?:\.\d+)?$/.test(token)
+    ) return;
+    keywords.add(token);
+  });
+  return keywords;
+}
+
+function keywordSourceItems() {
+  const unique = new Map();
+  selectedCategories().forEach((category) => {
+    (state.latest?.rankings?.[String(category.id)] || [])
+      .filter((item) => item.rank <= 100)
+      .forEach((item) => {
+        const key = item.itemCode || `${category.id}:${item.rank}:${item.itemName}`;
+        if (!unique.has(key)) unique.set(key, item);
+      });
+  });
+  return [...unique.values()];
+}
+
+function frequentKeywords(items, limit = 20) {
+  const counts = new Map();
+  items.forEach((item) => {
+    const keywords = extractKeywords(`${item.itemName || ""} ${item.catchcopy || ""}`);
+    keywords.forEach((keyword) => counts.set(keyword, (counts.get(keyword) || 0) + 1));
+  });
+  return [...counts.entries()]
+    .filter(([, count]) => count >= 2)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "ja"))
+    .slice(0, limit)
+    .map(([keyword, count]) => ({ keyword, count }));
+}
+
+function renderKeywords() {
+  const items = keywordSourceItems();
+  const keywords = frequentKeywords(items);
+  $("#keywordScope").textContent = `上位100位 · 重複除外 ${items.length.toLocaleString("ja-JP")}商品`;
+  $("#keywordCloud").innerHTML = keywords.length
+    ? keywords.map(({ keyword, count }, index) => {
+        const active = state.query.trim().toLocaleLowerCase("ja") === keyword;
+        const level = index < 3 ? "top" : index < 8 ? "high" : "";
+        return `<button class="keyword-chip ${level} ${active ? "active" : ""}" type="button" data-keyword="${escapeHtml(keyword)}" aria-pressed="${active}"><span>${escapeHtml(keyword)}</span><strong>${count}</strong></button>`;
+      }).join("")
+    : '<span class="keyword-empty">集計できるキーワードがまだありません。</span>';
 }
 
 function categories() {
@@ -51,8 +125,8 @@ function filteredRows() {
   const query = state.query.trim().toLocaleLowerCase("ja");
   return selectedCategories().flatMap((category) =>
     (state.latest.rankings?.[String(category.id)] || []).map((item) => ({ ...item, category }))
-  ).filter(({ itemName, itemCode, shopName }) =>
-    !query || `${itemName} ${itemCode} ${shopName}`.toLocaleLowerCase("ja").includes(query)
+  ).filter(({ itemName, itemCode, shopName, catchcopy, promotionHints }) =>
+    !query || `${itemName} ${itemCode} ${shopName} ${catchcopy || ""} ${(promotionHints || []).join(" ")}`.toLocaleLowerCase("ja").includes(query)
   );
 }
 
@@ -83,6 +157,7 @@ function updateCategorySelect() {
 }
 
 function render() {
+  renderKeywords();
   state.rows = visibleRows(filteredRows());
   $("#rankingBody").innerHTML = state.rows.map(rowTemplate).join("");
   $("#emptyState").hidden = state.rows.length > 0;
@@ -155,6 +230,14 @@ function bindEvents() {
   }));
   $("#categorySelect").addEventListener("change", (event) => { state.category = event.target.value; render(); });
   $("#searchInput").addEventListener("input", (event) => { state.query = event.target.value; render(); });
+  $("#keywordCloud").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-keyword]");
+    if (!button) return;
+    const keyword = button.dataset.keyword;
+    state.query = state.query.trim().toLocaleLowerCase("ja") === keyword ? "" : keyword;
+    $("#searchInput").value = state.query;
+    render();
+  });
   $("#csvButton").addEventListener("click", exportCsv);
 }
 
