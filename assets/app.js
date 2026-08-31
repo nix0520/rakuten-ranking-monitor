@@ -14,7 +14,8 @@ const KEYWORD_STOP_WORDS = new Set([
   "楽天", "市場", "公式", "送料無料", "送料込", "商品", "人気", "おすすめ", "ランキング",
   "レディース", "女性", "インナー", "ランジェリー", "下着", "ブラ", "ブラジャー",
   "ショーツ", "パンツ", "新作", "定番", "セール", "クーポン", "ポイント", "対象",
-  "限定", "メール便", "ネコポス", "即納", "予約", "税込", "価格"
+  "限定", "メール便", "ネコポス", "即納", "予約", "税込", "価格", "サイズ", "カップ",
+  "off", "ブラック", "ホワイト", "カラー", "トップス"
 ].map((word) => word.toLocaleLowerCase("ja")));
 
 function escapeHtml(value = "") {
@@ -30,7 +31,9 @@ function extractKeywords(value = "") {
   });
   const tokens = normalized.match(/[a-z][a-z0-9+.-]{1,}|[ァ-ヶー]{2,}|[一-龯々]{2,8}/giu) || [];
   tokens.forEach((rawToken) => {
-    const token = rawToken.replace(/^[ー.-]+|[ー.-]+$/g, "");
+    // The Japanese long-vowel mark "ー" is part of the word (e.g. インナー).
+    // Trim only ASCII punctuation; removing "ー" creates broken tokens such as インナ.
+    const token = rawToken.replace(/^[.-]+|[.-]+$/g, "");
     if (
       token.length < 2 ||
       token.length > 14 ||
