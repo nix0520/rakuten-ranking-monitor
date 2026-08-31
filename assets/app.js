@@ -2,6 +2,8 @@ const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: 
 const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+const trendDate = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit" });
+const trendDateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
 
 const KEYWORD_PHRASES = [
   "ノンワイヤー", "ナイトブラ", "脇高", "補正下着", "スポーツブラ", "ブラトップ",
@@ -101,7 +103,8 @@ function trendPoints(genreId, itemCode) {
 }
 
 function sparkline(points) {
-  if (points.length < 2) return '<span class="spark-empty">履歴蓄積中</span>';
+  if (!points.length) return '<span class="spark-empty">履歴蓄積中</span>';
+  if (points.length < 2) return `<span class="spark-empty">履歴蓄積中 · ${trendDate.format(new Date(points[0].at))}</span>`;
   const width = 150, height = 42, pad = 3;
   const min = Math.min(...points.map((point) => point.rank));
   const max = Math.max(...points.map((point) => point.rank));
@@ -113,8 +116,13 @@ function sparkline(points) {
   });
   const path = coordinates.map(([x, y], index) => `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const last = coordinates.at(-1);
-  const label = `${state.days}日間: 最高${min}位 / 最低${max}位`;
-  return `<svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}"><path d="${path}"></path><circle cx="${last[0]}" cy="${last[1]}" r="2.7"></circle></svg>`;
+  const firstDate = trendDate.format(new Date(points[0].at));
+  const lastDate = trendDate.format(new Date(points.at(-1).at));
+  const label = `${firstDate}から${lastDate}: 最高${min}位 / 最低${max}位`;
+  const hitPoints = coordinates.map(([x, y], index) =>
+    `<circle class="spark-hit" cx="${x}" cy="${y}" r="5"><title>${trendDateTime.format(new Date(points[index].at))} JST · ${points[index].rank}位</title></circle>`
+  ).join("");
+  return `<div class="trend-chart"><svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}"><path d="${path}"></path>${hitPoints}<circle class="spark-last" cx="${last[0]}" cy="${last[1]}" r="2.7"></circle></svg><div class="trend-dates"><span>${firstDate}</span><span>${lastDate}</span></div></div>`;
 }
 
 function movement(item) {
