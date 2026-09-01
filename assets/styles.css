@@ -121,6 +121,27 @@ tbody tr:hover { background: #fffdf9; }
 .error-box { margin: 18px 0; padding: 16px; border: 1px solid #f2bbbb; border-radius: 12px; color: #8d1111; background: #fff2f2; }
 footer { padding: 30px; color: var(--muted); font-size: 11px; text-align: center; }
 
+.health-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; margin: 16px 0; border-radius: 14px; border: 1px solid var(--line); background: #fffaf0; }
+.health-panel[data-level="good"] { background: #effaf3; border-color: #b7ddc5; }
+.health-panel[data-level="bad"] { background: #fff0ee; border-color: #edc2ba; }
+.health-panel strong { font-size: 14px; }
+.health-panel p, .health-panel small { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.health-panel button, .watch-transfer button { flex-shrink: 0; border: 1px solid var(--line); border-radius: 8px; padding: 9px; background: white; cursor: pointer; }
+.history-controls { display: flex; flex-wrap: wrap; gap: 14px; background: white; padding: 16px 20px; border: 1px solid var(--line); border-radius: 14px; }
+.history-controls label { display: grid; gap: 6px; font-size: 12px; flex: 1; min-width: 190px; }
+.history-controls p { flex-basis: 100%; margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.history-controls[hidden], .health-panel[hidden], #keywordPanel[hidden] { display: none; }
+.insight-controls select { min-width: 180px; max-width: 100%; }
+.watch-transfer { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 12px 0; }
+.import-label { display: grid; gap: 6px; }
+.watch-transfer input { width: 230px; max-width: 100%; }
+.provenance { display: block; color: #986224; }
+button:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 680px) {
+  .health-panel { align-items: stretch; flex-direction: column; padding: 12px; }
+  .history-controls { padding: 12px; }
+}
+
 .insight-controls, .observation-panel { margin: 14px 0; padding: 16px 20px; border: 1px solid var(--line); border-radius: 16px; background: #fff; }
 .insight-controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .insight-controls p, .insight-controls small { flex-basis: 100%; margin: 0; color: var(--muted); font-size: 12px; }

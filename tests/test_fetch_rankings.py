@@ -24,11 +24,28 @@ class RankingTests(unittest.TestCase):
             self.assertNotIn("metrics", captures[0])
             self.assertEqual(captures[1]["metrics"]["1"]["a"]["itemPrice"], 1200)
             self.assertEqual(captures[1]["metrics"]["1"]["a"]["pointRate"], 5)
+            self.assertNotIn("products", captures[1])
+            self.assertEqual(captures[1]["productsFile"], "history-products/2026-08-31.json")
+            products = json.loads((output / captures[1]["productsFile"]).read_text())
+            self.assertIn("a", products["products"])
             rankings["1"][0]["itemPrice"] = 900
             fetch.update_history(output, captures, rankings, moment, "2026-08-31")
             saved = json.loads((output / "history/2026-08-31.json").read_text())
             self.assertEqual(saved["metrics"]["1"]["a"]["itemPrice"], 900)
             self.assertEqual(fetch.previous_daily_ranks(captures, moment, "2026-08-31")["1"]["a"], 5)
+
+    def test_product_snapshots_follow_history_retention(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            rows = {"1": [{"itemCode": "shop:a", "rank": 2, "itemName": "Historical name", "itemPrice": 1000}]}
+            moment = datetime.fromisoformat("2026-08-01T20:30:00+09:00")
+            index = fetch.update_history(output, [], rows, moment, "2026-08-01")
+            old = output / "history-products/2026-08-01.json"
+            self.assertEqual(json.loads(old.read_text())["products"]["shop:a"]["itemName"], "Historical name")
+            captures = fetch.load_history_captures(output, index)
+            fetch.update_history(output, captures, rows, moment + timedelta(days=31), "2026-09-01")
+            self.assertFalse(old.exists())
+            self.assertTrue((output / "history-products/2026-09-01.json").exists())
 
     def test_api_request_treats_404_as_an_empty_ranking_page(self):
         def opener(request, timeout):
@@ -258,10 +275,17 @@ class RankingTests(unittest.TestCase):
             when = datetime(2026, 8, 25, 10, 0, tzinfo=fetch.JST)
             categories = [{"id": 110854, "group": "bra"}]
             fetch.update_realtime(output, categories, {"110854": [{"itemCode": "a", "rank": 5, "itemPrice": 1000, "pointRate": 1}]}, when, "2026-08-25T10:00:00+09:00")
+            initial = json.loads((output / "realtime/latest.json").read_text())
+            self.assertIsNone(initial["previousCapturedAt"])
+            self.assertIsNone(initial["rankings"]["110854"][0]["priceChange"])
             fetch.update_realtime(output, categories, {"110854": [{"itemCode": "a", "rank": 2, "itemPrice": 900, "pointRate": 5}]}, when + timedelta(minutes=20), "2026-08-25T10:20:00+09:00")
             latest = json.loads((output / "realtime" / "latest.json").read_text(encoding="utf-8"))
             self.assertEqual(latest["rankings"]["110854"][0]["change"], 3)
             self.assertFalse(latest["rankings"]["110854"][0]["isNew"])
+            self.assertEqual(latest["previousCapturedAt"], when.isoformat())
+            self.assertEqual(latest["rankings"]["110854"][0]["previousPrice"], 1000)
+            self.assertEqual(latest["rankings"]["110854"][0]["priceChange"], -100)
+            self.assertEqual(latest["rankings"]["110854"][0]["pointChange"], 4)
 
     def test_realtime_mode_includes_all_17_genres(self):
         with tempfile.TemporaryDirectory() as directory:

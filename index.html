@@ -25,6 +25,10 @@
       <button class="mode-button active" data-ranking-mode="daily" type="button">日榜 デイリー</button>
       <button class="mode-button" data-ranking-mode="realtime" type="button"><span class="live-dot"></span>リアルタイム榜</button>
     </nav>
+    <section id="dataHealth" class="health-panel" aria-live="polite">
+      <div><strong id="healthTitle">データ状態を確認中…</strong><p id="healthDetail"></p><small id="healthTiming"></small></div>
+      <button id="reloadData" type="button">サイトの保存データを再読込</button>
+    </section>
     <section class="summary" aria-label="概要">
       <article><span>表示ジャンル</span><strong id="categoryCount">—</strong></article>
       <article><span>表示商品</span><strong id="itemCount">—</strong></article>
@@ -54,25 +58,36 @@
     </section>
 
     <p id="categoryPath" class="category-path"></p>
+    <section id="historyControls" class="history-controls" aria-label="日榜の履歴と比較">
+      <label>表示する日榜（集計日）<select id="historyDate"><option value="latest">最新の日榜</option></select></label>
+      <label>比較する過去の日榜<select id="compareDate"><option value="">直前の集計日（自動）</option></select></label>
+      <label>表示範囲<select id="rankScope"><option value="100">各ジャンル上位100位</option><option value="all">保存された全順位（最大1000位）</option></select></label>
+      <p id="historyNote" role="status"></p>
+    </section>
     <section class="insight-controls" aria-label="順位変動とお気に入り">
       <div class="segmented" role="group" aria-label="順位変動フィルター">
         <button type="button" class="segment active" data-movement="all" aria-pressed="true">すべて</button>
         <button type="button" class="segment" data-movement="up" aria-pressed="false">上昇幅順</button>
         <button type="button" class="segment" data-movement="down" aria-pressed="false">下落幅順</button>
         <button type="button" class="segment" data-movement="new" aria-pressed="false">新規ランクイン</button>
+        <button type="button" class="segment" data-movement="exited" aria-pressed="false" id="exitedFilter">対象日に不在</button>
       </div>
+      <label>価格・ポイント変動<select id="promotionFilter"><option value="all">すべて</option><option value="price-down">値下げ</option><option value="points-up">ポイント倍率アップ</option><option value="promo-rise">順位上昇 ＋ 値下げ／ポイントアップ</option></select></label>
       <label><input type="checkbox" id="watchedOnly"> ★ お気に入りのみ</label>
       <p id="comparisonNote"></p>
       <small>お気に入りはこのブラウザに保存されます。端末間の同期はありません。</small>
       <small id="watchStatus" role="status"></small>
-      <details class="watch-manager"><summary>お気に入りの管理（圏外の商品も削除できます）</summary><div id="watchManager"></div></details>
+      <details class="watch-manager"><summary>お気に入りの管理（圏外の商品も削除できます）</summary><div id="watchManager"></div>
+        <div class="watch-transfer"><button id="exportWatchlist" type="button">お気に入りを保存（JSON）</button><label class="import-label">JSONから追加<input id="importWatchlist" type="file" accept=".json,application/json"></label></div>
+        <small>読み込みは既存のお気に入りと統合します。上書き・削除せず、ファイルは外部へ送信しません。</small><p id="watchTransferStatus" role="status"></p>
+      </details>
     </section>
     <details id="rolloverPanel" class="observation-panel">
       <summary>日榜の切替記録 · 日本時間（JST）</summary>
       <p>最後の旧日榜と最初の新日榜の間が観測上の切替区間です。初回検出時刻＝実際の更新時刻ではありません。</p>
       <div id="rolloverRows"></div>
     </details>
-    <section class="keyword-panel" aria-labelledby="keywordTitle">
+    <section id="keywordPanel" class="keyword-panel" aria-labelledby="keywordTitle">
       <div class="keyword-heading">
         <div>
           <p class="keyword-eyebrow">KEYWORD INSIGHT</p>
