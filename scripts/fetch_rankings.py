@@ -476,6 +476,18 @@ def update_history(
     current_capture = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
         "aggregateDate": aggregate_date,
+        # Keep compact historical observations, never backfill old prices from latest.
+        "metrics": {
+            genre_id: {
+                item["itemCode"]: {
+                    "itemPrice": item.get("itemPrice"),
+                    "pointRate": item.get("pointRate"),
+                    "promotionHints": item.get("promotionHints", []),
+                }
+                for item in items if item.get("itemCode")
+            }
+            for genre_id, items in rankings.items()
+        },
         "genres": {
             genre_id: {item["itemCode"]: item["rank"] for item in items if item["itemCode"]}
             for genre_id, items in rankings.items()

@@ -13,6 +13,23 @@ import fetch_rankings as fetch  # noqa: E402
 
 
 class RankingTests(unittest.TestCase):
+    def test_daily_history_stores_metrics_without_backfilling_legacy_prices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            legacy = {"capturedAt": "2026-08-30T20:30:00+09:00", "aggregateDate": "2026-08-30", "genres": {"1": {"a": 5}}}
+            rankings = {"1": [{"itemCode": "a", "rank": 2, "itemPrice": 1200, "pointRate": 5, "promotionHints": ["sale"]}]}
+            moment = datetime.fromisoformat("2026-08-31T20:30:00+09:00")
+            index = fetch.update_history(output, [legacy], rankings, moment, "2026-08-31")
+            captures = fetch.load_history_captures(output, index)
+            self.assertNotIn("metrics", captures[0])
+            self.assertEqual(captures[1]["metrics"]["1"]["a"]["itemPrice"], 1200)
+            self.assertEqual(captures[1]["metrics"]["1"]["a"]["pointRate"], 5)
+            rankings["1"][0]["itemPrice"] = 900
+            fetch.update_history(output, captures, rankings, moment, "2026-08-31")
+            saved = json.loads((output / "history/2026-08-31.json").read_text())
+            self.assertEqual(saved["metrics"]["1"]["a"]["itemPrice"], 900)
+            self.assertEqual(fetch.previous_daily_ranks(captures, moment, "2026-08-31")["1"]["a"], 5)
+
     def test_api_request_treats_404_as_an_empty_ranking_page(self):
         def opener(request, timeout):
             raise fetch.urllib.error.HTTPError(
