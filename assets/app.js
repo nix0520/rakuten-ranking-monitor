@@ -227,17 +227,31 @@ function metricChart(points, key, title, unit, rankAxis = false) {
 }
 
 let detailRequest = 0;
+function dailyChangeLabel(point) {
+  const value = Number.isFinite(point.change)
+    ? point.change > 0 ? `▲ ${point.change}位` : point.change < 0 ? `▼ ${Math.abs(point.change)}位` : "0位（変動なし）"
+    : "比較不可";
+  return `${value}<small>${point.comparisonDay ? `${point.comparisonDay} 比` : "前の集計日データなし"}</small>`;
+}
+
 async function openDetail(row) {
   const request = ++detailRequest;
-  const points = trendPoints(row.category.id, row.itemCode);
   $("#detailTitle").textContent = row.itemName;
-  $("#detailBody").innerHTML = `<p>${escapeHtml(row.category.name)} · ${escapeHtml(row.itemCode)} · 過去${state.days}日</p>
+  if (state.mode === "daily") {
+    const points = trendPoints(row.category.id, row.itemCode);
+    $("#detailBody").innerHTML = `<h3>日榜履歴 · 前回の集計日との比較</h3><p>${escapeHtml(row.category.name)} · ${escapeHtml(row.itemCode)} · 過去${state.days}日</p>
     <p>日榜は楽天集計日で表示。集計日がない旧記録のみ取得日と明記します。欠測は線を切り、価格・ポイントの未記録分は補完しません。</p>
+    <p>各集計日につき1件。順位変動は直前の保存済み集計日との比較で、比較日を表に明記します。同日内の取得やリアルタイム順位とは比較しません。</p>
     ${metricChart(points, "rank", "日榜順位", "位", true)}
     ${metricChart(points, "itemPrice", "日榜取得時の商品価格", "円")}
     ${metricChart(points, "pointRate", "日榜取得時の商品ポイント", "倍")}
-    <div class="history-scroll"><table class="history-grid"><thead><tr><th>日付 / 基準</th><th>順位</th><th>価格</th><th>ポイント</th><th>販促の手掛かり</th></tr></thead><tbody>${points.map(p => `<tr><td>${p.day}<small>${p.dateBasis === "aggregate" ? "集計日" : "取得日・集計日不明"}</small></td><td>${p.rank ?? "圏外 / 未取得"}</td><td>${p.itemPrice === null ? "未記録" : yen.format(p.itemPrice)}</td><td>${p.pointRate === null ? "未記録" : `${p.pointRate}倍`}</td><td>${p.promotionHints === null ? "未記録" : escapeHtml(p.promotionHints.join(" · ") || "文言なし")}</td></tr>`).join("")}</tbody></table></div>
-    <p>価格はAPIの商品価格です。券適用後の支払額や店舗共通ポイントを網羅しません。順位と販促の同時変化は因果関係を証明するものではありません。</p>
+    <div class="history-scroll"><table class="history-grid"><thead><tr><th>日付 / 基準</th><th>順位</th><th>前回日榜比</th><th>価格</th><th>ポイント</th><th>販促の手掛かり</th></tr></thead><tbody>${points.map(p => `<tr><td>${p.day}<small>${p.dateBasis === "aggregate" ? "集計日" : "取得日・集計日不明"}</small></td><td>${p.rank ?? "圏外 / 未取得"}</td><td>${dailyChangeLabel(p)}</td><td>${p.itemPrice === null ? "未記録" : yen.format(p.itemPrice)}</td><td>${p.pointRate === null ? "未記録" : `${p.pointRate}倍`}</td><td>${p.promotionHints === null ? "未記録" : escapeHtml(p.promotionHints.join(" · ") || "文言なし")}</td></tr>`).join("")}</tbody></table></div>
+    <p>価格はAPIの商品価格です。券適用後の支払額や店舗共通ポイントを網羅しません。順位と販促の同時変化は因果関係を証明するものではありません。</p>`;
+    $("#productDialog").showModal();
+    return;
+  }
+  $("#detailBody").innerHTML = `<h3>リアルタイム榜履歴 · 前回取得との比較</h3><p>${escapeHtml(row.category.name)} · ${escapeHtml(row.itemCode)}</p>
+    <p>リアルタイム榜は前回の成功した取得との比較（通常20分間隔）です。日榜の前日比ではありません。</p>
     <h3>最新取得日のリアルタイム変化ログ（JST）</h3><div id="realtimeDetail">読み込み中…</div>`;
   $("#productDialog").showModal();
   const rt = state.realtimeLatest;

@@ -72,3 +72,43 @@ test('zero-rank history and gaps produce no invalid SVG coordinates', () => {
   assert.doesNotMatch(chart, /NaN/);
   assert.doesNotMatch(chart.match(/<path d="([^"]*)"/)[1], /L/);
 });
+
+test('daily detail never requests or renders realtime event logs', async () => {
+  const a = app();
+  let requests = 0;
+  a.context.fetch = async () => { requests++; throw Error('daily detail must not fetch'); };
+  a.run(`state.realtimeLatest = { generatedAt: new Date().toISOString(), rankings: {} }; render();`);
+  await a.run('openDetail(state.rows[0])');
+  assert.equal(requests, 0);
+  assert.match(a.element('#detailBody').innerHTML, /前回日榜比/);
+  assert.doesNotMatch(a.element('#detailBody').innerHTML, /realtimeDetail|リアルタイム変化ログ/);
+});
+
+test('realtime detail displays interval events without any daily chart or table', async () => {
+  const a = app();
+  const urls = [];
+  a.context.fetch = async url => {
+    urls.push(url);
+    return { ok: true, json: async () => ({ events: [{ capturedAt: '2026-09-01T15:05:00+09:00', changes: { 1: { moved: [{ itemCode: 'a', previousRank: 2, rank: 1 }] } } }] }) };
+  };
+  a.run(`state.mode = 'realtime'; state.realtimeLatest = { generatedAt: '2026-09-01T16:05:00+09:00', rankings: state.latest.rankings }; render();`);
+  await a.run('openDetail(state.rows[0])');
+  assert.deepEqual(urls, ['data/realtime/2026-09-01.json']);
+  assert.doesNotMatch(a.element('#detailBody').innerHTML, /metric-chart|history-grid|前回日榜比/);
+  assert.match(a.element('#realtimeDetail').innerHTML, /順位：2 → 1位/);
+});
+
+test('pending realtime request cannot leak into a subsequently opened daily detail', async () => {
+  const a = app();
+  let finish;
+  a.context.fetch = () => new Promise(resolve => { finish = resolve; });
+  a.run(`bindEvents(); state.mode = 'realtime'; state.realtimeLatest = { generatedAt: '2026-09-01T16:05:00+09:00', rankings: {} }; render();`);
+  const pending = a.run('openDetail(state.rows[0])');
+  a.element('#productDialog').close();
+  a.run(`state.mode = 'daily';`);
+  await a.run('openDetail(state.rows[0])');
+  finish({ ok: true, json: async () => ({ events: [] }) });
+  await pending;
+  assert.equal(a.element('#realtimeDetail').innerHTML, '');
+  assert.match(a.element('#detailBody').innerHTML, /前回日榜比/);
+});

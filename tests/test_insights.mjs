@@ -60,3 +60,28 @@ test('first observation already new leaves lower bound unknown', () => {
   assert.ok(result.first);
   assert.equal(result.old, undefined);
 });
+
+test('daily changes compare unique aggregate dates, including baseline outside display period', () => {
+  const capture = (day, rank, hour = '18') => ({ aggregateDate: day, capturedAt: `${day}T${hour}:00:00+09:00`, genres: { 1: { a: rank } } });
+  const captures = [capture('2026-08-30', 10), capture('2026-08-31', 4, '18'), capture('2026-08-31', 3, '20'), capture('2026-09-01', 3)];
+  const series = dailySeries(captures, 1, 'a', 2, Date.parse('2026-09-01T21:00:00+09:00'));
+  assert.equal(series.length, 2);
+  assert.equal(series[0].change, 7);
+  assert.equal(series[0].comparisonDay, '2026-08-30');
+  assert.equal(series[1].change, 0);
+  assert.equal(series[1].comparisonDay, '2026-08-31');
+});
+
+test('missing or unknown aggregate-day baselines never create fabricated daily movements', () => {
+  const captures = [
+    { capturedAt: '2026-08-29T18:00:00+09:00', genres: { 1: { a: 100 } } },
+    { aggregateDate: '2026-08-30', capturedAt: '2026-08-30T18:00:00+09:00', genres: { 1: { a: 10 } } },
+    { aggregateDate: '2026-08-31', capturedAt: '2026-08-31T18:00:00+09:00', genres: { 1: {} } },
+    { aggregateDate: '2026-09-01', capturedAt: '2026-09-01T18:00:00+09:00', genres: { 1: { a: 5 } } }
+  ];
+  const series = dailySeries(captures, 1, 'a', 7, Date.parse('2026-09-01T21:00:00+09:00'));
+  assert.equal(series[1].change, null);
+  assert.equal(series[1].comparisonDay, null);
+  assert.equal(series[3].change, null);
+  assert.equal(series[3].comparisonDay, '2026-08-31');
+});
