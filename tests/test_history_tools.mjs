@@ -5,6 +5,20 @@ import { archiveSnapshots, previousSnapshot, snapshotRows, promotionMatches, dat
 const categories = [{ id: 1, name: 'Bra' }, { id: 2, name: 'Parent' }];
 const snap = (day, genres, extra = {}) => ({ day, key: day, basis: 'aggregate', aggregateDate: day, capturedAt: `${day}T20:30:00+09:00`, genres, ...extra });
 
+test('auto-fetch outcomes remain visible until the new daily snapshot is published', () => {
+  const now = Date.parse('2026-09-01T16:00:00+09:00');
+  const failed = { capturedAt: '2026-09-01T15:00:00+09:00', aggregateDate: '2026-09-01',
+    autoDailyFetch: {aggregateDate:'2026-09-01',status:'failed',finishedAt:'2026-09-01T15:10:00+09:00'} };
+  const log = {days:[{observations:[failed]}]};
+  let health = dataHealth({aggregateDate:'2026-08-31'}, null, log, now);
+  assert.equal(health.dailyState, 'pending');
+  assert.equal(health.autoFetchState, 'failed');
+  log.days[0].observations.push({...failed,capturedAt:'2026-09-01T15:30:00+09:00',autoDailyFetch:{aggregateDate:'2026-09-01',status:'succeeded'}});
+  health = dataHealth({aggregateDate:'2026-09-01'}, null, log, now);
+  assert.equal(health.dailyState, 'published');
+  assert.equal(health.autoFetchState, 'succeeded');
+});
+
 test('archive indexes by aggregate date, labels legacy capture dates and latest supersedes same-day file', () => {
   const archive = archiveSnapshots([snap('2026-08-30', { 1: { a: 4 } }), { capturedAt: '2026-08-29T16:00:00Z', genres: {} }], {
     aggregateDate: '2026-08-30', generatedAt: '2026-08-31T01:00:00+09:00', rankings: { 1: [{ itemCode: 'a', rank: 2, itemPrice: 1200 }] }

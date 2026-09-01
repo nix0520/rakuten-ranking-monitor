@@ -125,6 +125,19 @@ function historicalApp() {
   return a;
 }
 
+test('failed automatic daily fetch warns about retry, but published data clears the warning', () => {
+  const a = app();
+  a.run(`const now = new Date().toISOString(); const today = jstDay(Date.now());
+    state.dailyLatest = {aggregateDate:jstDay(Date.now()-86400000)};
+    state.updateLog = {days:[{date:today,observations:[{capturedAt:now,aggregateDate:today,
+      autoDailyFetch:{aggregateDate:today,status:'failed',finishedAt:now}}]}]}; renderHealth();`);
+  assert.match(a.element('#healthTitle').textContent, /自动完整采集失败/);
+  assert.equal(a.element('#dataHealth').dataset.level, 'bad');
+  a.run('state.dailyLatest.aggregateDate = jstDay(Date.now()); renderHealth()');
+  assert.match(a.element('#healthTitle').textContent, /今日已更新/);
+  assert.equal(a.element('#dataHealth').dataset.level, 'good');
+});
+
 test('historical date lazily loads its own metadata and compares only prior daily data', async () => {
   const a = historicalApp();
   const urls = [];

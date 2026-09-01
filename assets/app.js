@@ -265,9 +265,18 @@ function renderHealth() {
   const health = dataHealth(state.dailyLatest, state.realtimeLatest, state.updateLog);
   let title, detail, level;
   if (state.mode === "daily") {
-    const labels = { published: "今日の日榜は公開済み / 今日已更新", pending: "新日榜を検出・完全取得待ち / 已切榜，等待完整采集", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
+    const labels = { published: "今日の日榜は公開済み / 今日已更新", pending: "新日榜を検出・自動取得対象 / 已检测新日榜，待自动采集完成", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
     title = labels[health.dailyState]; level = health.dailyState === "published" ? "good" : health.dailyStale ? "bad" : "warn";
-    detail = `公開日榜の集計日：${health.publishedDay || "不明"}。${health.firstSeen ? `新日榜の初回検出：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "探測記録は2時間以上前または未記録です。現在も旧榜のままとは断定できません。" : "探測は切替確認のみ。完全取得で商品一覧を更新します。"}${health.dailyStale ? " 公開日榜は前日より古い状態です。" : ""}`;
+    detail = `公開日榜の集計日：${health.publishedDay || "不明"}。${health.firstSeen ? `新日榜の初回検出：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "探測記録は2時間以上前または未記録です。現在も旧榜のままとは断定できません。" : "探測で未公開の当日榜を検出すると、17ジャンルを自動で完全取得・公開します。同じ集計日は重複起動しません。"}${health.dailyStale ? " 公開日榜は前日より古い状態です。" : ""}`;
+    if (health.dailyState === "pending") {
+      if (health.autoFetchState === "failed") {
+        title = "自動取得失敗・次回探測で再試行 / 自动完整采集失败，待下次探测重试";
+        level = "bad";
+        detail += ` 自動取得失敗：${formatStamp(health.autoFetchAt)}。旧日榜を保持しています。`;
+      } else {
+        detail += " 完全取得・アップロード・サイト公開の完了後に一覧が切り替わります。旧版の探測記録の場合は、次回の更新済みプログラムで自動取得を試みます。";
+      }
+    }
   } else {
     title = { fresh: "リアルタイムデータは新鮮 / 实时数据正常", stale: "リアルタイム取得から45分超 / 实时记录已过期", unknown: "リアルタイム取得記録なし", clock: "取得時刻が未来 / 请检查电脑时间" }[health.realtimeState];
     level = health.realtimeState === "fresh" ? "good" : "bad";
