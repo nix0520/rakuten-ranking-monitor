@@ -54,6 +54,24 @@
     </section>
 
     <p id="categoryPath" class="category-path"></p>
+    <section class="insight-controls" aria-label="順位変動とお気に入り">
+      <div class="segmented" role="group" aria-label="順位変動フィルター">
+        <button type="button" class="segment active" data-movement="all" aria-pressed="true">すべて</button>
+        <button type="button" class="segment" data-movement="up" aria-pressed="false">上昇幅順</button>
+        <button type="button" class="segment" data-movement="down" aria-pressed="false">下落幅順</button>
+        <button type="button" class="segment" data-movement="new" aria-pressed="false">新規ランクイン</button>
+      </div>
+      <label><input type="checkbox" id="watchedOnly"> ★ お気に入りのみ</label>
+      <p id="comparisonNote"></p>
+      <small>お気に入りはこのブラウザに保存されます。端末間の同期はありません。</small>
+      <small id="watchStatus" role="status"></small>
+      <details class="watch-manager"><summary>お気に入りの管理（圏外の商品も削除できます）</summary><div id="watchManager"></div></details>
+    </section>
+    <details id="rolloverPanel" class="observation-panel">
+      <summary>日榜の切替記録 · 日本時間（JST）</summary>
+      <p>最後の旧日榜と最初の新日榜の間が観測上の切替区間です。初回検出時刻＝実際の更新時刻ではありません。</p>
+      <div id="rolloverRows"></div>
+    </details>
     <section class="keyword-panel" aria-labelledby="keywordTitle">
       <div class="keyword-heading">
         <div>
@@ -87,6 +105,11 @@
       </div>
     </section>
   </main>
+
+  <dialog id="productDialog" aria-labelledby="detailTitle">
+    <div class="detail-heading"><h2 id="detailTitle">商品履歴</h2><button type="button" id="closeDetail" aria-label="閉じる">閉じる ×</button></div>
+    <div id="detailBody"></div>
+  </dialog>
 
   <footer>Data provided by Rakuten Web Service · すべて日本時間（JST）· 日榜09:50–10:30 / 19:50–20:30観測 · リアルタイム毎時05分・25分・45分（20分間隔）</footer>
   <script type="module" src="assets/app.js"></script>
