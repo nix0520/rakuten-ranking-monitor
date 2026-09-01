@@ -42,7 +42,7 @@ export function dailySeries(captures, genre, code, days, now = Date.now()) {
 
 export function filterAndSort(rows, filter, watchedOnly, watchlist) {
   const selected = rows.filter(row => (!watchedOnly || watchlist.has(row.itemCode)) &&
-    (filter === "all" || (filter === "new" ? row.isNew :
+    (filter === "all" || (filter === "exited" ? row.comparisonState === "exited" : filter === "new" ? row.isNew :
       !row.isNew && Number.isFinite(row.change) && (filter === "up" ? row.change > 0 : row.change < 0))));
   if (filter === "up") selected.sort((a, b) => b.change - a.change || a.rank - b.rank);
   if (filter === "down") selected.sort((a, b) => a.change - b.change || a.rank - b.rank);

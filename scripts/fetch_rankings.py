@@ -445,6 +445,14 @@ def update_realtime(
         for genre_id, items in previous.get("rankings", {}).items()
     }
     annotate_changes(rankings, previous_ranks)
+    for genre_id, items in rankings.items():
+        old_items = {item["itemCode"]: item for item in previous.get("rankings", {}).get(genre_id, [])}
+        for item in items:
+            old = old_items.get(item["itemCode"], {})
+            item["previousPrice"] = old.get("itemPrice")
+            item["previousPointRate"] = old.get("pointRate")
+            item["priceChange"] = item["itemPrice"] - old["itemPrice"] if item.get("itemPrice") is not None and old.get("itemPrice") is not None else None
+            item["pointChange"] = item["pointRate"] - old["pointRate"] if item.get("pointRate") is not None and old.get("pointRate") is not None else None
     event = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
         "sourceBuildAt": source_build_at,
@@ -456,6 +464,7 @@ def update_realtime(
     write_json(day_path, day)
     write_json(latest_path, {
         "generatedAt": captured_at.isoformat(timespec="seconds"),
+        "previousCapturedAt": previous.get("generatedAt"),
         "sourceBuildAt": source_build_at,
         "categories": categories,
         "rankings": rankings,
@@ -476,6 +485,17 @@ def update_history(
     current_capture = {
         "capturedAt": captured_at.isoformat(timespec="seconds"),
         "aggregateDate": aggregate_date,
+        "rankLimit": MAX_RANK,
+        "products": {
+            item["itemCode"]: {
+                field: item.get(field)
+                for field in (
+                    "itemName", "itemUrl", "imageUrl", "shopName", "shopCode", "shopUrl",
+                    "catchcopy", "reviewCount", "reviewAverage", "couponMentioned",
+                )
+            }
+            for items in rankings.values() for item in items if item.get("itemCode")
+        },
         # Keep compact historical observations, never backfill old prices from latest.
         "metrics": {
             genre_id: {
@@ -500,6 +520,18 @@ def update_history(
         day = capture_aggregate_date(existing)
         if day and cutoff_date.isoformat() <= day <= current_date.isoformat():
             by_date[day] = existing
+
+    # Descriptive product snapshots are lazy-loaded by the UI; keep rank history compact.
+    product_day = capture_aggregate_date(current_capture)
+    products = current_capture.pop("products")
+    if product_day in by_date:
+        current_capture["productsFile"] = f"history-products/{product_day}.json"
+        write_json(output_dir / current_capture["productsFile"], {"products": products})
+    products_dir = output_dir / "history-products"
+    if products_dir.exists():
+        for path in products_dir.glob("????-??-??.json"):
+            if path.stem not in by_date:
+                path.unlink()
 
     history_dir = output_dir / "history"
     history_dir.mkdir(parents=True, exist_ok=True)

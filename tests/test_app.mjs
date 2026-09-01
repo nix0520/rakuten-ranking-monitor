@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as insights from '../assets/insights.mjs';
+import * as historyTools from '../assets/history-tools.mjs';
 
 function app() {
   const elements = new Map();
@@ -16,11 +17,11 @@ function app() {
     return elements.get(selector);
   }
   const storage = { value: '[]', getItem() { return this.value; }, setItem(_, value) { this.value = value; } };
-  const context = vm.createContext({ ...insights, document: { querySelector: element, querySelectorAll: () => [] },
-    window: { localStorage: storage }, localStorage: storage, Intl, Date, console,
+  const context = vm.createContext({ ...insights, ...historyTools, watchlistJson: historyTools.exportWatchlist, document: { querySelector: element, querySelectorAll: () => [] },
+    window: { localStorage: storage }, localStorage: storage, Intl, Date, console, URL,
     fetch: async () => ({ ok: true, json: async () => ({ events: [] }) }) });
   const source = readFileSync(new URL('../assets/app.js', import.meta.url), 'utf8')
-    .replace(/^import .*?;\n/, '').replace(/\ninit\(\);\s*$/, '');
+    .replace(/^import .*?;\n/gm, '').replace(/\ninit\(\);\s*$/, '');
   vm.runInContext(source, context);
   vm.runInContext(`state.latest = { rankings: { 1: [{ itemCode: 'a', itemName: '<script>bad</script>', rank: 1, change: 5, itemPrice: 1000, pointRate: 2 }] }, categories: [{ id: 1, group: 'bra', name: 'Bra' }] }; state.history = { captures: [] }; state.updateLog = { days: [] };`, context);
   return { context, element, storage, run: code => vm.runInContext(code, context) };
@@ -111,4 +112,93 @@ test('pending realtime request cannot leak into a subsequently opened daily deta
   await pending;
   assert.equal(a.element('#realtimeDetail').innerHTML, '');
   assert.match(a.element('#detailBody').innerHTML, /前回日榜比/);
+});
+
+function historicalApp() {
+  const a = app();
+  a.run(`state.dailyLatest = { generatedAt: '2026-09-01T18:00:00+09:00', aggregateDate: '2026-09-01', categories: state.latest.categories,
+    rankings: {1: [{itemCode:'shop:a', itemName:'Current name', rank:1, itemPrice:900, pointRate:5}]}};
+    state.history.captures = [
+      {capturedAt:'2026-08-30T18:00:00+09:00', aggregateDate:'2026-08-30', genres:{1:{'shop:a':8,'shop:b':9}}, metrics:{1:{'shop:a':{itemPrice:1200,pointRate:1}}}},
+      {capturedAt:'2026-08-31T18:00:00+09:00', aggregateDate:'2026-08-31', genres:{1:{'shop:a':3,'shop:c':101}}, metrics:{1:{'shop:a':{itemPrice:1000,pointRate:2}}}, productsFile:'history-products/2026-08-31.json'}
+    ];`);
+  return a;
+}
+
+test('historical date lazily loads its own metadata and compares only prior daily data', async () => {
+  const a = historicalApp();
+  const urls = [];
+  a.context.fetch = async url => { urls.push(url); return {ok:true, json:async()=>({products:{'shop:a':{itemName:'Old name'}}})}; };
+  await a.run('refreshView()');
+  assert.deepEqual(urls, []);
+  assert.equal(a.run('state.rows[0].change'), 2);
+  await a.run("state.selectedDay='2026-08-31'; refreshView()");
+  assert.deepEqual(urls, ['data/history-products/2026-08-31.json']);
+  assert.equal(a.run('state.rows[0].itemName'), 'Old name');
+  assert.equal(a.run('state.rows[0].itemPrice'), 1000);
+  assert.equal(a.run('state.rows[0].change'), 5);
+  assert.equal(a.run('state.rows[0].comparisonDate'), '2026-08-30');
+  assert.equal(a.element('#keywordPanel').hidden, true);
+  a.run("state.rankScope='all'; render()");
+  assert.equal(a.run('state.rows.length'), 3);
+  a.run("state.promotionFilter='promo-rise'; render()");
+  assert.equal(a.run('state.rows.length'), 1);
+  assert.equal(a.run('state.rows[0].priceChange'), -200);
+  a.run("state.promotionFilter='all'; state.movement='exited'; render()");
+  assert.equal(a.run('state.rows[0].itemCode'), 'shop:b');
+  assert.equal(a.run('state.rows[0].rank'), null);
+});
+
+test('switching to realtime cancels pending historical view and resets exit-only filter', async () => {
+  const a = historicalApp();
+  let finish;
+  a.context.fetch = () => new Promise(resolve => {finish=resolve;});
+  const pending = a.run("state.selectedDay='2026-08-31'; refreshView()");
+  a.run("state.realtimeLatest = {generatedAt:'2026-09-01T18:05:00+09:00',categories:state.dailyLatest.categories,rankings:{1:[]}}; state.movement='exited'");
+  await a.run("selectMode('realtime')");
+  finish({ok:true,json:async()=>({products:{}})});
+  await pending;
+  assert.equal(a.run('state.mode'), 'realtime');
+  assert.equal(a.run('state.viewSnapshot'), null);
+  assert.equal(a.run('state.viewLoading'), false);
+  assert.equal(a.run('state.movement'), 'all');
+});
+
+test('failed historical metadata never substitutes current prices or reviews', async () => {
+  const a = historicalApp();
+  a.context.fetch = async () => ({ok:false});
+  await a.run("state.selectedDay='2026-08-31'; delete state.history.captures[1].metrics; refreshView()");
+  assert.equal(a.run('state.rows[0].itemPrice'), null);
+  assert.equal(a.run('state.rows[0].reviewAverage'), null);
+  assert.equal(a.run('state.rows[0].metadataBasis'), 'reference');
+  assert.match(a.element('#historyNote').textContent, /取得できません/);
+});
+
+test('favorite import merges codes, keeps per-genre rows, and preserves state on failures', async () => {
+  const a = app();
+  a.run("state.watchlist = new Set(['shop:a']); state.latest.rankings = {1:[{itemCode:'shop:a',rank:1}],2:[{itemCode:'shop:a',rank:3}]}; state.latest.categories.push({id:2,group:'bra',name:'Other'}); state.watchedOnly=true");
+  a.context.file = {size:30,text:async()=> '["shop:a","shop:b"]'};
+  await a.run('importFavorites(file)');
+  assert.deepEqual(JSON.parse(a.storage.value), ['shop:a','shop:b']);
+  assert.equal(a.run('state.rows.length'), 2);
+  a.storage.setItem = () => {throw Error('quota');};
+  a.context.file = {size:12,text:async()=> '["shop:c"]'};
+  await a.run('importFavorites(file)');
+  assert.equal(a.run('state.watchlist.has("shop:c")'), false);
+  assert.match(a.element('#watchTransferStatus').textContent, /変更していません/);
+  a.context.file = {size:524289,text:async()=> {throw Error('must not read');}};
+  await a.run('importFavorites(file)');
+  assert.match(a.element('#watchTransferStatus').textContent, /512KB/);
+});
+
+test('history partial failures do not discard healthy dates or request external paths', async () => {
+  const a = app();
+  const urls = [];
+  a.context.fetch = async url => { urls.push(url); return {ok:true,json:async()=>({capturedAt:'2026-08-31T18:00:00+09:00',genres:{}})}; };
+  const history = await a.run("loadHistory({captures:[{file:'history/2026-08-31.json'},{file:'https://example.com/data'}]})");
+  assert.equal(history.captures.length, 1);
+  assert.equal(history.failures.length, 1);
+  assert.deepEqual(urls, ['data/history/2026-08-31.json']);
+  assert.equal(a.run("safeUrl('javascript:alert(1)')"), '');
+  assert.equal(a.run("csvCell('=1+1')"), '"\'=1+1"');
 });

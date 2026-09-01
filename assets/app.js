@@ -1,6 +1,7 @@
 import { WATCH_KEY, jstDay, dailySeries, filterAndSort, readWatchlist, rolloverWindow } from "./insights.mjs";
+import { archiveSnapshots, referenceProducts, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist as watchlistJson } from "./history-tools.mjs";
 
-const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set() };
+const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "" };
 try { state.watchlist = readWatchlist(window.localStorage); } catch { /* Storage can be disabled. */ }
 const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
@@ -53,7 +54,7 @@ function keywordSourceItems() {
   const unique = new Map();
   selectedCategories().forEach((category) => {
     (state.latest?.rankings?.[String(category.id)] || [])
-      .filter((item) => item.rank <= 100)
+      .filter((item) => Number.isFinite(item.rank) && item.rank <= 100)
       .forEach((item) => {
         const key = item.itemCode || `${category.id}:${item.rank}:${item.itemName}`;
         if (!unique.has(key)) unique.set(key, item);
@@ -76,6 +77,8 @@ function frequentKeywords(items, limit = 20) {
 }
 
 function renderKeywords() {
+  $("#keywordPanel").hidden = state.mode === "daily" && (state.selectedDay !== "latest" || Boolean(state.compareDay));
+  if ($("#keywordPanel").hidden) return;
   const items = keywordSourceItems();
   const keywords = frequentKeywords(items);
   $("#keywordScope").textContent = `上位100位 · 重複除外 ${items.length.toLocaleString("ja-JP")}商品`;
@@ -97,7 +100,8 @@ function selectedCategories() {
 }
 
 function trendPoints(genreId, itemCode) {
-  return dailySeries(state.history?.captures || [], genreId, itemCode, state.days);
+  const end = state.mode === "daily" && state.viewSnapshot ? Date.parse(`${state.viewSnapshot.day}T23:59:59+09:00`) : Date.now();
+  return dailySeries(state.archive?.length ? state.archive : state.history?.captures || [], genreId, itemCode, state.days, end);
 }
 
 function sparkline(points) {
@@ -128,6 +132,8 @@ function sparkline(points) {
 }
 
 function movement(item) {
+  if (item.comparisonState === "exited") return '<span class="movement down">範囲外</span>';
+  if (item.comparisonState === "unavailable") return '<span class="movement stay" title="比較データ不足">不明</span>';
   if (item.isNew) return '<span class="movement new">NEW</span>';
   if (item.change > 0) return `<span class="movement up">▲ ${item.change}</span>`;
   if (item.change < 0) return `<span class="movement down">▼ ${Math.abs(item.change)}</span>`;
@@ -138,26 +144,41 @@ function filteredRows() {
   const query = state.query.trim().toLocaleLowerCase("ja");
   const rows = selectedCategories().flatMap((category) =>
     (state.latest.rankings?.[String(category.id)] || []).map((item) => ({ ...item, category }))
-  ).filter(({ itemName, itemCode, shopName, catchcopy, promotionHints }) =>
+  ).filter(row => Number.isFinite(row.rank) || state.movement === "exited" || state.mode === "daily" && (state.selectedDay !== "latest" || Boolean(state.compareDay)))
+  .filter(row => promotionMatches(row, state.promotionFilter))
+  .filter(({ itemName, itemCode, shopName, catchcopy, promotionHints }) =>
     !query || `${itemName} ${itemCode} ${shopName} ${catchcopy || ""} ${(promotionHints || []).join(" ")}`.toLocaleLowerCase("ja").includes(query)
   );
   return filterAndSort(rows, state.movement, state.watchedOnly, state.watchlist);
 }
 
 function visibleRows(rows) {
-  return state.query.trim() || state.watchedOnly ? rows : rows.filter((row) => row.rank <= 100);
+  return state.query.trim() || state.watchedOnly || state.rankScope === "all" ? rows : rows.filter((row) => (row.rank ?? row.previousRank ?? Infinity) <= 100);
+}
+
+function safeUrl(value) {
+  try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? escapeHtml(url.href) : ""; } catch { return ""; }
+}
+
+function priceMovement(row) {
+  const pieces = [];
+  if (Number.isFinite(row.priceChange)) pieces.push(`価格 ${row.priceChange > 0 ? "+" : ""}${yen.format(row.priceChange)}（${yen.format(row.previousPrice)} → ${yen.format(row.itemPrice)}）`);
+  if (Number.isFinite(row.pointChange)) pieces.push(`ポイント ${row.previousPointRate} → ${row.pointRate}倍`);
+  return pieces.length ? `<span class="promo">${escapeHtml(pieces.join(" · "))}</span>` : '<span class="meta">価格・ポイント比較：記録不足</span>';
 }
 
 function rowTemplate(row) {
-  const image = row.imageUrl
-    ? `<img src="${escapeHtml(row.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+  const image = safeUrl(row.imageUrl)
+    ? `<img src="${safeUrl(row.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
     : '<div class="image-placeholder" aria-hidden="true"></div>';
+  const title = safeUrl(row.itemUrl) ? `<a class="product-name" href="${safeUrl(row.itemUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.itemName)}</a>` : `<span class="product-name">${escapeHtml(row.itemName)}</span>`;
+  const shop = safeUrl(row.shopUrl) ? `<a class="shop-link" href="${safeUrl(row.shopUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.shopName)}</a>` : escapeHtml(row.shopName);
   return `<tr>
-    <td><div class="rank"><span class="rank-number">${row.rank}</span>${movement(row)}</div></td>
-    <td><div class="product">${image}<div><a class="product-name" href="${escapeHtml(row.itemUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.itemName)}</a><div class="meta">${escapeHtml(row.itemCode)}</div><span class="genre-chip">${escapeHtml(row.category.name)}</span></div></div></td>
-    <td><a class="shop-link" href="${escapeHtml(row.shopUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.shopName)}</a></td>
-    <td class="price">${yen.format(row.itemPrice)}${row.pointRate > 1 ? `<span class="promo">ポイント${row.pointRate}倍</span>` : ""}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}</td>
-    <td><span class="rating">★ ${Number(row.reviewAverage).toFixed(2)}</span><span class="review-count">${Number(row.reviewCount).toLocaleString("ja-JP")}件</span></td>
+    <td><div class="rank"><span class="rank-number">${row.rank ?? "—"}</span>${movement(row)}</div>${row.comparisonDate ? `<small class="meta">${row.comparisonDate}：${row.previousRank ?? "不在 / 未取得"}${row.previousRank != null ? "位" : ""}</small>` : ""}</td>
+    <td><div class="product">${image}<div>${title}<div class="meta">${escapeHtml(row.itemCode)}</div><span class="genre-chip">${escapeHtml(row.category.name)}</span>${row.metadataBasis === "reference" ? '<small class="meta provenance">名称・画像・店舗は別時点の参考情報</small>' : row.metadataBasis === "missing" ? '<small class="meta provenance">当時の商品資料は未記録</small>' : ""}</div></div></td>
+    <td>${shop}</td>
+    <td class="price">${Number.isFinite(row.itemPrice) ? yen.format(row.itemPrice) : "未記録"}${Number.isFinite(row.pointRate) ? `<span class="promo">ポイント${row.pointRate}倍</span>` : '<span class="meta">ポイント未記録</span>'}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}${priceMovement(row)}</td>
+    <td><span class="rating">${Number.isFinite(row.reviewAverage) ? `★ ${row.reviewAverage.toFixed(2)}` : "未記録"}</span><span class="review-count">${Number.isFinite(row.reviewCount) ? `${row.reviewCount.toLocaleString("ja-JP")}件` : ""}</span></td>
     <td>${state.mode === "realtime" ? '<span class="spark-empty">前回取得比を順位横に表示</span>' : sparkline(trendPoints(row.category.id, row.itemCode))}
       <div class="row-actions"><button type="button" data-watch="${escapeHtml(row.itemCode)}" aria-pressed="${state.watchlist.has(row.itemCode)}">${state.watchlist.has(row.itemCode) ? "★ 保存済み" : "☆ お気に入り"}</button><button type="button" data-detail-code="${escapeHtml(row.itemCode)}" data-detail-genre="${row.category.id}">履歴詳細</button></div>
     </td>
@@ -172,7 +193,94 @@ function updateCategorySelect() {
   $("#categorySelect").value = state.category;
 }
 
+const productSnapshots = new Map();
+let viewRequest = 0;
+async function refreshView() {
+  const request = ++viewRequest;
+  state.historyWarning = "";
+  if (state.mode === "realtime") {
+    state.latest = state.realtimeLatest || { categories: state.dailyLatest?.categories || [], rankings: {} };
+    state.viewSnapshot = null; state.baselineSnapshot = null; state.viewLoading = false;
+    if (state.movement === "exited") state.movement = "all";
+  } else {
+    state.archive = archiveSnapshots(state.history?.captures || [], state.dailyLatest);
+    const latestKey = archiveSnapshots([], state.dailyLatest).at(-1)?.key;
+    let target = state.archive.find(s => s.key === (state.selectedDay === "latest" ? latestKey : state.selectedDay));
+    if (!target && state.selectedDay !== "latest") {
+      state.selectedDay = "latest"; target = state.archive.find(s => s.key === latestKey);
+    }
+    if (state.compareDay && !previousSnapshot(state.archive, target, state.compareDay)) state.compareDay = "";
+    if (target?.productsFile && !target.products) {
+      state.viewLoading = true;
+      $("#historyNote").textContent = "選択日の商品資料を読み込み中…";
+      $("#historyDate").disabled = true; $("#compareDate").disabled = true;
+      try {
+        if (!/^history-products\/\d{4}-\d{2}-\d{2}\.json$/.test(target.productsFile)) throw Error('invalid snapshot path');
+        if (!productSnapshots.has(target.productsFile)) {
+          const response = await fetch(`data/${target.productsFile}`, { cache: "no-store" });
+          if (!response.ok) throw Error('missing product snapshot');
+          const payload = await response.json();
+          if (!payload.products || typeof payload.products !== "object" || Array.isArray(payload.products)) throw Error('invalid snapshot');
+          productSnapshots.set(target.productsFile, payload.products);
+        }
+        target.products = productSnapshots.get(target.productsFile);
+      } catch {
+        if (request === viewRequest) state.historyWarning = "当時の商品資料を取得できません。順位は保存値、名称等は参考情報です。日付を選び直すと再試行します。";
+      }
+    }
+    if (request !== viewRequest) return;
+    state.viewLoading = false; state.viewSnapshot = target || null;
+    state.baselineSnapshot = previousSnapshot(state.archive, target, state.compareDay);
+    const categories = state.dailyLatest?.categories || [];
+    const rows = snapshotRows(target, state.baselineSnapshot, categories, referenceProducts(state.dailyLatest, state.realtimeLatest), true);
+    const rankings = {};
+    for (const row of rows) (rankings[String(row.category.id)] ||= []).push(row);
+    state.latest = target ? { generatedAt: target.capturedAt, aggregateDate: target.basis === "aggregate" ? target.day : null, sourceBuildAt: target.sourceBuildAt, categories, rankings } : state.dailyLatest || { categories, rankings: {} };
+  }
+  updateCategorySelect(); renderUpdatedAt(); render();
+}
+
+function renderHistoryControls() {
+  $("#historyControls").hidden = state.mode !== "daily";
+  $("#historyDate").innerHTML = '<option value="latest">最新の日榜</option>' + state.archive.map(s => `<option value="${s.key}">${s.day}${s.basis === "capture" ? "（取得日・集計日不明）" : ""}</option>`).join("");
+  $("#historyDate").value = state.selectedDay;
+  const candidates = state.archive.filter(s => s.basis === "aggregate" && state.viewSnapshot?.basis === "aggregate" && s.day < state.viewSnapshot.day);
+  $("#compareDate").innerHTML = '<option value="">直前の集計日（自動）</option>' + candidates.map(s => `<option value="${s.key}">${s.day}</option>`).join("");
+  $("#compareDate").value = state.compareDay;
+  $("#historyDate").disabled = state.viewLoading;
+  $("#compareDate").disabled = state.viewLoading || candidates.length === 0;
+  $("#rankScope").value = state.rankScope;
+  $("#exitedFilter").disabled = state.mode !== "daily";
+  document.querySelectorAll("[data-movement]").forEach(button => {
+    button.classList.toggle("active", button.dataset.movement === state.movement);
+    button.setAttribute("aria-pressed", String(button.dataset.movement === state.movement));
+  });
+  const target = state.viewSnapshot, before = state.baselineSnapshot;
+  $("#historyNote").textContent = state.viewLoading ? "日付を切り替え中…" : target
+    ? `表示：${target.day}（${target.basis === "aggregate" ? "集計日" : "取得日・集計日不明"}）／ 比較：${before?.day || "比較可能な過去日なし"}。NEW・範囲外は保存された範囲内の出入りです。空のジャンル・未記録は比較不明とします。${state.historyWarning}`
+    : "保存された日榜はありません。";
+}
+
+function renderHealth() {
+  const health = dataHealth(state.dailyLatest, state.realtimeLatest, state.updateLog);
+  let title, detail, level;
+  if (state.mode === "daily") {
+    const labels = { published: "今日の日榜は公開済み / 今日已更新", pending: "新日榜を検出・完全取得待ち / 已切榜，等待完整采集", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
+    title = labels[health.dailyState]; level = health.dailyState === "published" ? "good" : health.dailyStale ? "bad" : "warn";
+    detail = `公開日榜の集計日：${health.publishedDay || "不明"}。${health.firstSeen ? `新日榜の初回検出：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "探測記録は2時間以上前または未記録です。現在も旧榜のままとは断定できません。" : "探測は切替確認のみ。完全取得で商品一覧を更新します。"}${health.dailyStale ? " 公開日榜は前日より古い状態です。" : ""}`;
+  } else {
+    title = { fresh: "リアルタイムデータは新鮮 / 实时数据正常", stale: "リアルタイム取得から45分超 / 实时记录已过期", unknown: "リアルタイム取得記録なし", clock: "取得時刻が未来 / 请检查电脑时间" }[health.realtimeState];
+    level = health.realtimeState === "fresh" ? "good" : "bad";
+    detail = "通常20分間隔。45分超は記録の鮮度警告で、停止原因の断定ではありません。PC・代理・タスクの実行状態をご確認ください。";
+  }
+  $("#dataHealth").dataset.level = level;
+  $("#healthTitle").textContent = title;
+  $("#healthDetail").textContent = detail;
+  $("#healthTiming").textContent = `最終日榜観測：${formatStamp(health.lastObservation)}（API集計日 ${health.observedDay || "不明"}） · 完全日榜取得：${formatStamp(state.dailyLatest?.generatedAt)} · リアルタイム取得：${formatStamp(health.realtimeAt)} · 再読込は保存データの読込のみで、楽天API取得を開始しません。${state.history?.failures?.length ? ` 履歴${state.history.failures.length}件の読込に失敗。比較対象に使いません。` : ""}`;
+}
+
 function render() {
+  renderHistoryControls(); renderHealth();
   renderKeywords();
   state.rows = visibleRows(filteredRows());
   $("#rankingBody").innerHTML = state.rows.map(rowTemplate).join("");
@@ -183,13 +291,14 @@ function render() {
   $("#captureLabel").textContent = state.mode === "realtime" ? "更新間隔" : "データ期間";
   $("#captureCount").textContent = state.mode === "realtime" ? "20分" : `${state.history?.captures?.length || 0} 回`;
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(new Date());
-  const updateDay = (state.updateLog?.days || []).find((day) => day.date === today) || state.updateLog?.days?.at(-1);
+  const updateDay = (state.updateLog?.days || []).find((day) => day.date === today);
+  const detected = updateDay ? rolloverWindow(updateDay).first?.capturedAt : null;
   $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜首次切替";
-  $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (updateDay?.firstUpdateDetectedAt ? dateTime.format(new Date(updateDay.firstUpdateDetectedAt)) : "判定待ち");
+  $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (detected ? dateTime.format(new Date(detected)) : "判定待ち");
   $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "09:50 / 19:50から観測");
   const selected = selectedCategories();
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${state.group === "bra" ? "Bra" : "ショーツ"}グループ · ${selected.length}ジャンル`;
-  $("#comparisonNote").textContent = state.mode === "daily" ? "日榜：異なる集計日の比較（同日同士は比較しません）。通常は上位100位・検索/お気に入りは保存範囲内。" : "リアルタイム：前回の成功した取得との比較（通常20分間隔）。";
+  $("#comparisonNote").textContent = state.mode === "daily" ? `日榜：${state.viewSnapshot?.day || "最新"} vs ${state.baselineSnapshot?.day || "過去日未記録"}。価格・ポイントも同じ2日の取得時点を比較。通常上位100位、全保存順位も選択可。` : `リアルタイム：前回の成功した取得との比較（通常20分間隔）。前回：${formatStamp(state.realtimeLatest?.previousCapturedAt)}。`;
   $("#watchStatus").textContent = `${state.watchlist.size}商品を保存 · 現在のジャンル・検索条件・収集範囲に一致する商品だけ表示`;
   $("#watchManager").innerHTML = [...state.watchlist].map(code => `<div>${escapeHtml(code)} <button type="button" data-remove-watch="${escapeHtml(code)}">削除</button></div>`).join("") || "保存した商品はありません。";
   $("#rolloverPanel").hidden = state.mode !== "daily";
@@ -290,44 +399,85 @@ function renderUpdatedAt() {
   $("#updatedAt").textContent = state.latest?.generatedAt ? `${modeLabel}更新 ${dateTime.format(new Date(state.latest.generatedAt))} JST${sourceBuild}` : `${modeLabel}の初回取得待ち`;
 }
 
-function selectMode(mode) {
+async function selectMode(mode) {
   state.mode = mode;
-  state.latest = mode === "realtime" ? state.realtimeLatest : state.dailyLatest;
   state.category = "all";
   document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.classList.toggle("active", button.dataset.rankingMode === mode));
   $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ17ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra & ショーツ、17ジャンルの日次ランキング最大1000位を追跡";
+  await refreshView();
   $("#errorBox").hidden = Boolean(state.latest?.generatedAt);
-  if (!state.latest?.generatedAt) $("#errorBox").textContent = "リアルタイム榜は初回采集后显示。新电脑更新程序并安装计划任务后会自动生成。";
-  updateCategorySelect(); renderUpdatedAt(); render();
+  if (!state.latest?.generatedAt) $("#errorBox").textContent = "選択した榜の保存データがありません。";
 }
 
 function csvCell(value) {
+  if (typeof value === "string" && /^[=+\-@\t\r]/.test(value)) value = "'" + value;
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
 }
 
 function exportCsv() {
-  const headers = ["group", "genreId", "genreName", "rank", "previousRank", "change", "new", "itemCode", "itemName", "shopName", "price", "pointRate", "promotionHints", "couponMentioned", "reviewAverage", "reviewCount", "itemUrl"];
+  const headers = ["group", "genreId", "genreName", "rank", "previousRank", "change", "new", "itemCode", "itemName", "shopName", "price", "pointRate", "promotionHints", "couponMentioned", "reviewAverage", "reviewCount", "itemUrl", "targetDate", "comparisonDate", "comparisonState", "previousPrice", "priceChange", "previousPointRate", "pointChange", "metadataBasis"];
   const exportRows = filteredRows();
-  const lines = [headers, ...exportRows.map((row) => [row.category.group, row.category.id, row.category.name, row.rank, row.previousRank, row.change, row.isNew, row.itemCode, row.itemName, row.shopName, row.itemPrice, row.pointRate, (row.promotionHints || []).join(" | "), row.couponMentioned, row.reviewAverage, row.reviewCount, row.itemUrl])];
+  const lines = [headers, ...exportRows.map((row) => [row.category.group, row.category.id, row.category.name, row.rank, row.previousRank, row.change, row.isNew, row.itemCode, row.itemName, row.shopName, row.itemPrice, row.pointRate, (row.promotionHints || []).join(" | "), row.couponMentioned, row.reviewAverage, row.reviewCount, row.itemUrl, row.targetDate, row.comparisonDate, row.comparisonState, row.previousPrice, row.priceChange, row.previousPointRate, row.pointChange, row.metadataBasis])];
   const blob = new Blob(["\ufeff" + lines.map((line) => line.map(csvCell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
   const anchor = document.createElement("a");
   anchor.href = URL.createObjectURL(blob);
-  anchor.download = `rakuten-ranking-${state.group}-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.download = `rakuten-ranking-${state.mode}-${state.group}-${state.viewSnapshot?.day || jstDay(Date.now())}${state.baselineSnapshot ? '-vs-' + state.baselineSnapshot.day : ''}.csv`;
   anchor.click();
-  URL.revokeObjectURL(anchor.href);
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
+}
+
+function exportFavorites() {
+  const blob = new Blob([watchlistJson(state.watchlist)], { type: "application/json;charset=utf-8" });
+  const anchor = document.createElement("a");
+  anchor.href = URL.createObjectURL(blob);
+  anchor.download = `rakuten-favorites-${jstDay(Date.now())}.json`;
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(anchor.href), 1000);
+  $("#watchTransferStatus").textContent = `${state.watchlist.size}商品のお気に入りJSONをダウンロードしました。安全な場所に保存してください。`;
+}
+
+async function importFavorites(file) {
+  if (!file) return;
+  try {
+    if (file.size > 524288) throw new Error("ファイルは512KB以下にしてください。");
+    const imported = parseWatchImport(await file.text());
+    const merged = new Set([...state.watchlist, ...imported]);
+    if (merged.size > 10000) throw new Error("統合後のお気に入りは最大10,000件です。");
+    const added = merged.size - state.watchlist.size;
+    // Persist before changing UI state; failed imports never erase the existing list.
+    localStorage.setItem(WATCH_KEY, JSON.stringify([...merged]));
+    state.watchlist = merged; render();
+    $("#watchTransferStatus").textContent = `${added}件を追加、${imported.size - added}件は保存済み。合計${merged.size}件。既存のお気に入りは保持しました。`;
+  } catch (error) {
+    $("#watchTransferStatus").textContent = `読み込みできませんでした。${error.message}（既存のお気に入りは変更していません）`;
+  } finally { $("#importWatchlist").value = ""; }
 }
 
 async function loadHistory(index) {
+  const failures = [];
   const captures = await Promise.all((index?.captures || []).map(async (entry) => {
     if (entry.genres) return entry;
     if (!entry.file) return null;
-    const response = await fetch(`data/${entry.file}`, { cache: "no-store" });
-    return response.ok ? response.json() : null;
+    try {
+      if (!/^history\/\d{4}-\d{2}-\d{2}\.json$/.test(entry.file)) throw Error('invalid history path');
+      const response = await fetch(`data/${entry.file}`, { cache: "no-store" });
+      if (!response.ok) throw Error('missing history');
+      const capture = await response.json();
+      if (!capture.genres || !capture.capturedAt) throw Error('invalid history');
+      return capture;
+    } catch { failures.push(entry.file); return null; }
   }));
-  return { captures: captures.filter(Boolean) };
+  return { captures: captures.filter(Boolean), failures };
 }
 
 function bindEvents() {
+  $("#historyDate").addEventListener("change", event => { state.selectedDay = event.target.value; refreshView(); });
+  $("#compareDate").addEventListener("change", event => { state.compareDay = event.target.value; refreshView(); });
+  $("#rankScope").addEventListener("change", event => { state.rankScope = event.target.value; render(); });
+  $("#promotionFilter").addEventListener("change", event => { state.promotionFilter = event.target.value; render(); });
+  $("#reloadData").addEventListener("click", () => window.location.reload());
+  $("#exportWatchlist").addEventListener("click", exportFavorites);
+  $("#importWatchlist").addEventListener("change", event => importFavorites(event.target.files?.[0]));
   $("#watchManager").addEventListener("click", event => {
     const button = event.target.closest("[data-remove-watch]");
     if (!button) return;
@@ -401,7 +551,8 @@ async function init() {
       $("#errorBox").hidden = false;
       $("#errorBox").textContent = "初回データ取得前です。GitHub Actionsを手動実行するとランキングが表示されます。";
     }
-    updateCategorySelect(); bindEvents(); renderUpdatedAt(); render();
+    bindEvents(); await refreshView();
+    setInterval(renderHealth, 60000);
   } catch (error) {
     $("#errorBox").hidden = false;
     $("#errorBox").textContent = error.message;
