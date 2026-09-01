@@ -19,7 +19,7 @@ export function dailySeries(captures, genre, code, days, now = Date.now()) {
   [...captures].sort((a, b) => String(a.capturedAt).localeCompare(String(b.capturedAt))).forEach(capture => {
     const aggregate = validDay(capture.aggregateDate);
     const day = aggregate || jstDay(capture.capturedAt);
-    if (!day || day < cutoff || day > today) return;
+    if (!day || day > today) return;
     const metrics = capture.metrics?.[String(genre)]?.[code] || {};
     const rank = capture.genres?.[String(genre)]?.[code];
     byDay.set(day, { at: `${day}T00:00:00+09:00`, day, capturedAt: capture.capturedAt,
@@ -27,7 +27,17 @@ export function dailySeries(captures, genre, code, days, now = Date.now()) {
       itemPrice: metrics.itemPrice ?? null, pointRate: metrics.pointRate ?? null,
       promotionHints: metrics.promotionHints ?? null });
   });
-  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+  const sorted = [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+  let previousDaily = null;
+  return sorted.map(point => {
+    const previous = point.dateBasis === "aggregate" ? previousDaily : null;
+    const change = previous && Number.isFinite(previous.rank) && Number.isFinite(point.rank)
+      ? previous.rank - point.rank : null;
+    const result = { ...point, change, comparisonDay: previous?.day || null };
+    // Legacy capture dates cannot establish the previous daily ranking.
+    if (point.dateBasis === "aggregate") previousDaily = point;
+    return result;
+  }).filter(point => point.day >= cutoff);
 }
 
 export function filterAndSort(rows, filter, watchedOnly, watchlist) {
