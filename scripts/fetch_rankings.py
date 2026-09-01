@@ -162,6 +162,7 @@ def fetch_category(
     sleep_fn: Callable[[float], None] = time.sleep,
     max_rank: int = MAX_RANK,
     period: str | None = None,
+    expected_date: str | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     collected: list[dict[str, Any]] = []
     source_build_at: str | None = None
@@ -178,6 +179,8 @@ def fetch_category(
             break
         source_build_at = source_build_at or payload.get("lastBuildDate")
         raw_items = payload.get("Items") or payload.get("items") or []
+        if raw_items and expected_date and source_date(payload.get("lastBuildDate")) != expected_date:
+            raise RuntimeError(f"Daily source date mismatch for genre {category['id']} page {page}")
         page_items = [entry.get("Item", entry.get("item", entry)) for entry in raw_items]
         collected.extend(normalize_item(item) for item in page_items if isinstance(item, dict))
         if len(page_items) < 30:
@@ -569,7 +572,45 @@ def fixture_request(path: Path) -> Callable[[int, int, str, str], dict[str, Any]
     return request
 
 
-def run(args: argparse.Namespace) -> None:
+def record_auto_daily_fetch(output_dir: Path, aggregate_date: str, status: str) -> None:
+    """Attach the automatic-fetch outcome to the initiating probe, without secrets."""
+    path = output_dir / "daily-update-log.json"
+    log = load_json(path, {"days": []})
+    for day in reversed(log["days"]):
+        for observation in reversed(day.get("observations", [])):
+            attempt = observation.get("autoDailyFetch", {})
+            if status != "running" and attempt.get("status") == "running" and attempt.get("aggregateDate") == aggregate_date:
+                observation["autoDailyFetch"].update(
+                    status=status, finishedAt=datetime.now(JST).isoformat(timespec="seconds")
+                )
+                write_json(path, log)
+                return
+    if log["days"] and log["days"][-1].get("observations"):
+        log["days"][-1]["observations"][-1]["autoDailyFetch"] = {
+            "aggregateDate": aggregate_date, "status": status,
+            "startedAt": datetime.now(JST).isoformat(timespec="seconds"),
+        }
+        write_json(path, log)
+
+
+def needs_auto_daily_fetch(output_dir: Path, aggregate_date: str | None, today: str,
+                           categories: list[dict[str, Any]]) -> bool:
+    if not aggregate_date or aggregate_date != today:
+        return False
+    latest = load_json(output_dir / "latest.json", {})
+    published_date = source_date(latest.get("aggregateDate"))
+    if published_date and published_date > aggregate_date:
+        return False  # Never regress a newer published snapshot.
+    expected = {str(category["id"]) for category in categories}
+    complete = (
+        latest.get("generatedAt") and published_date == aggregate_date
+        and expected.issubset(latest.get("rankings", {}))
+        and any(latest.get("rankings", {}).values())
+    )
+    return not complete
+
+
+def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> None:
     categories = load_json(Path(args.categories), [])
     validate_categories(categories)
     output_dir = Path(args.output_dir)
@@ -600,6 +641,7 @@ def run(args: argparse.Namespace) -> None:
             request_fn,
             max_rank=max_rank,
             period="realtime" if mode == "realtime" else None,
+            expected_date=expected_daily_date,
         )
         rankings[str(category["id"])] = items
         source_build_at = source_build_at or build_at
@@ -613,10 +655,31 @@ def run(args: argparse.Namespace) -> None:
     update_daily_observations(output_dir, rankings, captured_at, source_build_at)
     if mode == "daily-probe":
         print(f"Saved daily update observation at {captured_at.isoformat()}")
+        aggregate_date = source_date(source_build_at)
+        if needs_auto_daily_fetch(output_dir, aggregate_date, captured_at.date().isoformat(), categories):
+            print(f"New daily aggregate date {aggregate_date}; starting automatic full fetch.", flush=True)
+            record_auto_daily_fetch(output_dir, aggregate_date, "running")
+            daily_args = argparse.Namespace(**{**vars(args), "mode": "daily"})
+            try:
+                run(daily_args, expected_daily_date=aggregate_date)
+            except Exception:
+                # The probe itself succeeded: publish the observation/failure status and
+                # leave the previous complete snapshot as the retry marker.
+                record_auto_daily_fetch(output_dir, aggregate_date, "failed")
+                print("Automatic full daily fetch failed; keeping the published daily ranking. "
+                      "The next successful probe will retry.", file=sys.stderr, flush=True)
+            else:
+                record_auto_daily_fetch(output_dir, aggregate_date, "succeeded")
+                print(f"Automatic full daily fetch completed for {aggregate_date}.", flush=True)
+        else:
+            print("No unpublished current daily aggregate date; full fetch not needed.")
         return
 
     aggregate_date = source_date(source_build_at)
     today = captured_at.date().isoformat()
+    if expected_daily_date and (aggregate_date != expected_daily_date or aggregate_date != today
+                                or not any(rankings.values())):
+        raise RuntimeError("Automatic daily fetch did not produce a complete current-day snapshot")
     if not args.fixture and aggregate_date != today:
         print(
             f"Daily API has not rolled over ({aggregate_date or 'unknown'}); "
@@ -639,11 +702,12 @@ def run(args: argparse.Namespace) -> None:
         "categories": categories,
         "rankings": rankings,
     }
-    write_json(latest_path, latest)
     write_json(
         history_path,
         update_history(output_dir, history_captures, rankings, captured_at, aggregate_date),
     )
+    # Publish last: the latest snapshot also serves as the successful-fetch marker.
+    write_json(latest_path, latest)
     print(f"Saved {sum(map(len, rankings.values()))} ranking rows at {captured_at.isoformat()}")
 
 

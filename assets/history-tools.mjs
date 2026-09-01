@@ -100,6 +100,7 @@ export function dataHealth(daily, realtime, log, now = Date.now()) {
     .sort((a, b) => Date.parse(a.capturedAt) - Date.parse(b.capturedAt));
   const last = observations.at(-1);
   const seen = observations.find(o => jstDay(o.capturedAt) === today && o.aggregateDate === today);
+  const attempt = observations.filter(o => o.autoDailyFetch?.aggregateDate === today).at(-1)?.autoDailyFetch;
   const age = last ? now - Date.parse(last.capturedAt) : Infinity;
   const day = validDay(daily?.aggregateDate);
   let dailyState = 'unknown';
@@ -110,6 +111,7 @@ export function dataHealth(daily, realtime, log, now = Date.now()) {
   const realtimeState = !Number.isFinite(rtTime) ? 'unknown' : rtTime > now + 300000 ? 'clock' : now - rtTime > 45 * 60000 ? 'stale' : 'fresh';
   return { today, dailyState, publishedDay: day, lastObservation: last?.capturedAt || null, observedDay: last?.aggregateDate || null,
     firstSeen: seen?.capturedAt || null, observationStale: age > 2 * 3600000,
+    autoFetchState: attempt?.status || null, autoFetchAt: attempt?.finishedAt || attempt?.startedAt || null,
     dailyStale: !!day && day < jstDay(now - 86400000), realtimeState, realtimeAt: realtime?.generatedAt || null };
 }
 
