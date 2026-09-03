@@ -122,8 +122,99 @@ class AutoDailyTests(unittest.TestCase):
             fetch.fetch_category(self.categories[0], "test", "test", mixed, sleep_fn=lambda _: None, expected_date=self.today)
         with self.assertRaisesRegex(RuntimeError, "date mismatch"):
             fetch.fetch_category(self.categories[0], "test", "test", lambda *a, **k: {"Items": [self.row(1)]}, expected_date=self.today)
-        items, _ = fetch.fetch_category(self.categories[0], "test", "test", lambda *a, **k: {"Items": [], "_notFound": True}, expected_date=self.today)
+        items, _ = fetch.fetch_category(self.categories[0], "test", "test", lambda *a, **k: {"Items": [], "_notFound": True}, sleep_fn=lambda _: None, expected_date=self.today)
         self.assertEqual(items, [])
+
+    def test_one_genre_empty_after_positive_probe_is_failed_and_retried(self):
+        genre = str(self.categories[0]["id"])
+        original = self.request
+        def missing(category, *args, **kwargs):
+            if str(category["id"]) == genre and kwargs["max_rank"] == 1000:
+                return [], self.today
+            return original(category, *args, **kwargs)
+        with patch.object(fetch, "fetch_category", side_effect=missing), contextlib.redirect_stdout(io.StringIO()):
+            fetch.run(self.args)
+        self.assertEqual(fetch.load_json(self.output / "latest.json", {}), self.previous)
+        self.assertEqual(self.attempts()[0]["status"], "failed")
+        self.assertEqual(self.attempts()[0]["missingGenres"], [genre])
+        self.assertFalse((self.output / f"history/{self.today}.json").exists())
+        self.run_probe()
+        self.assertEqual(self.attempts()[-1]["status"], "succeeded")
+
+    def test_already_published_empty_genre_is_not_a_success_marker(self):
+        genre = str(self.categories[0]["id"])
+        broken = {**self.previous, "aggregateDate": self.today, "collectionVersion": 2,
+                  "rankings": {**self.old_rows, genre: []}}
+        fetch.write_json(self.output / "latest.json", broken)
+        fetch.update_daily_observations(self.output, self.old_rows, self.now, self.today)
+        self.assertTrue(fetch.needs_auto_daily_fetch(self.output, self.today, self.today, self.categories))
+        self.run_probe()
+        latest = fetch.load_json(self.output / "latest.json", {})
+        self.assertEqual(len(latest["rankings"][genre]), 1)
+        self.assertEqual(latest["rankings"][genre][0]["previousRank"], 5)
+        self.assertFalse(fetch.needs_auto_daily_fetch(self.output, self.today, self.today, self.categories))
+
+    def test_legacy_current_day_is_refetched_once_for_pagination_fix(self):
+        fetch.write_json(self.output / "latest.json", {**self.previous, "aggregateDate": self.today})
+        self.run_probe()
+        self.assertEqual(len(self.calls), 34)
+        self.run_probe()
+        self.assertEqual(len(self.calls), 51)
+
+    def test_consistently_empty_current_day_does_not_copy_yesterday(self):
+        genre = str(self.categories[0]["id"])
+        original = self.request
+        def empty(category, *args, **kwargs):
+            if str(category["id"]) == genre:
+                return [], self.today
+            return original(category, *args, **kwargs)
+        with patch.object(fetch, "fetch_category", side_effect=empty), contextlib.redirect_stdout(io.StringIO()):
+            fetch.run(self.args)
+        latest = fetch.load_json(self.output / "latest.json", {})
+        self.assertEqual(latest["aggregateDate"], self.today)
+        self.assertEqual(latest["rankings"][genre], [])
+        self.assertEqual(self.attempts()[-1]["status"], "succeeded")
+
+    def test_manual_full_fetch_also_rejects_below_observed_minimum(self):
+        genre = str(self.categories[0]["id"])
+        rows = {genre: [dict(self.row(i), itemCode=f"shop:{i}") for i in range(1, 31)]}
+        fetch.update_daily_observations(self.output, rows, self.now, self.today)
+        # A subsequent empty observation must not erase the positive evidence.
+        fetch.update_daily_observations(self.output, {genre: []}, self.now, self.today)
+        self.args.mode = "daily"
+        self.run_probe()
+        self.assertEqual(fetch.load_json(self.output / "latest.json", {}), self.previous)
+        self.assertEqual(self.attempts()[-1]["missingGenres"], [genre])
+
+    def test_short_page_does_not_terminate_full_daily_pagination(self):
+        calls = []
+        def request(_genre, page, *_args, **_kwargs):
+            calls.append(page)
+            ranks = range(1, 30) if page == 1 else range(31, 61) if page == 2 else []
+            return {"Items": [dict(self.row(i), itemCode=f"shop:{i}") for i in ranks], "lastBuildDate": self.today}
+        items, _ = fetch.fetch_category(self.categories[0], "a", "k", request,
+                                       sleep_fn=lambda _: None, expected_date=self.today)
+        self.assertEqual(len(items), 59)
+        self.assertEqual(items[-1]["rank"], 60)
+        self.assertEqual(calls, [1, 2, 3, 3, 3])
+
+    def test_transient_empty_first_page_retries_and_recovers(self):
+        attempts = []
+        def request(_genre, page, *_args, **_kwargs):
+            attempts.append(page)
+            if len(attempts) == 1:
+                return {"Items": [], "_notFound": True}
+            return {"Items": [self.row(1)] if page == 1 else [], "lastBuildDate": self.today}
+        items, _ = fetch.fetch_category(self.categories[0], "a", "k", request,
+                                       sleep_fn=lambda _: None, expected_date=self.today)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(attempts[:2], [1, 1])
+
+    def test_repeated_page_is_not_accepted_as_complete(self):
+        with self.assertRaisesRegex(RuntimeError, "no valid progress"):
+            fetch.fetch_category(self.categories[0], "a", "k",
+                lambda *a, **k: {"Items": [self.row(1)], "lastBuildDate": self.today},
+                sleep_fn=lambda _: None, expected_date=self.today)
 
 
 if __name__ == "__main__":

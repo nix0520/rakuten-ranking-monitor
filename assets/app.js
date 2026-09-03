@@ -265,7 +265,7 @@ function renderHealth() {
   const health = dataHealth(state.dailyLatest, state.realtimeLatest, state.updateLog);
   let title, detail, level;
   if (state.mode === "daily") {
-    const labels = { published: "今日の日榜は公開済み / 今日已更新", pending: "新日榜を検出・自動取得対象 / 已检测新日榜，待自动采集完成", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
+    const labels = { published: "今日の日榜は公開済み / 今日已更新", incomplete: "日榜の一部ジャンルが欠測 / 部分类目数据缺失，待重新采集", pending: "新日榜を検出・自動取得対象 / 已检测新日榜，待自动采集完成", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
     title = labels[health.dailyState]; level = health.dailyState === "published" ? "good" : health.dailyStale ? "bad" : "warn";
     detail = `公開日榜の集計日：${health.publishedDay || "不明"}。${health.firstSeen ? `新日榜の初回検出：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "探測記録は2時間以上前または未記録です。現在も旧榜のままとは断定できません。" : "探測で未公開の当日榜を検出すると、17ジャンルを自動で完全取得・公開します。同じ集計日は重複起動しません。"}${health.dailyStale ? " 公開日榜は前日より古い状態です。" : ""}`;
     if (health.dailyState === "pending") {
@@ -276,6 +276,10 @@ function renderHealth() {
       } else {
         detail += " 完全取得・アップロード・サイト公開の完了後に一覧が切り替わります。旧版の探測記録の場合は、次回の更新済みプログラムで自動取得を試みます。";
       }
+    }
+    if (health.missingGenres.length) {
+      level = "bad";
+      detail += ` 同じ集計日の観測よりデータが不足：${health.missingGenres.join("、")}。次回の日榜探測で再取得を試みます。前日の順位を今日の値として補完しません。`;
     }
   } else {
     title = { fresh: "リアルタイムデータは新鮮 / 实时数据正常", stale: "リアルタイム取得から45分超 / 实时记录已过期", unknown: "リアルタイム取得記録なし", clock: "取得時刻が未来 / 请检查电脑时间" }[health.realtimeState];
@@ -294,6 +298,12 @@ function render() {
   state.rows = visibleRows(filteredRows());
   $("#rankingBody").innerHTML = state.rows.map(rowTemplate).join("");
   $("#emptyState").hidden = state.rows.length > 0;
+  const health = dataHealth(state.dailyLatest, state.realtimeLatest, state.updateLog);
+  const selectedMissing = state.mode === "daily" && state.viewSnapshot?.day === health.publishedDay
+    && selectedCategories().some(category => health.missingGenres.includes(String(category.id)));
+  $("#emptyState").textContent = selectedMissing
+    ? "このジャンルの日榜は欠測です / 此类目日榜采集异常，等待重新采集。不是没有上榜商品，也不会用昨天数据代替。"
+    : "該当する商品がありません。検索条件を変更してください。";
   $("#itemCount").textContent = state.rows.length.toLocaleString("ja-JP");
   $("#newCount").textContent = state.rows.filter((row) => row.isNew).length.toLocaleString("ja-JP");
   $("#categoryCount").textContent = selectedCategories().length;

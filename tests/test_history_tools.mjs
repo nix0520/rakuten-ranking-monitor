@@ -3,6 +3,25 @@ import assert from 'node:assert/strict';
 import { archiveSnapshots, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist } from '../assets/history-tools.mjs';
 
 const categories = [{ id: 1, name: 'Bra' }, { id: 2, name: 'Parent' }];
+
+test('published day with fewer rows than same-day probe is incomplete, not published', () => {
+  const now = Date.parse('2026-09-03T15:30:00+09:00');
+  const log = {days:[{observations:[
+    {capturedAt:'2026-09-03T15:00:00+09:00',aggregateDate:'2026-09-03',ranks:{110854:{a:1,b:2}}},
+    {capturedAt:'2026-09-03T15:03:00+09:00',aggregateDate:'2026-09-03',ranks:{110854:{}},autoDailyFetch:{aggregateDate:'2026-09-03',status:'succeeded'}}
+  ]}]};
+  const latest = {aggregateDate:'2026-09-03',rankings:{110854:[]}};
+  let health = dataHealth(latest, null, log, now);
+  assert.equal(health.dailyState, 'incomplete');
+  assert.deepEqual(health.missingGenres, ['110854']);
+  latest.rankings[110854] = [{itemCode:'a'},{itemCode:'b'}];
+  health = dataHealth(latest, null, log, now);
+  assert.equal(health.dailyState, 'published');
+  assert.deepEqual(health.missingGenres, []);
+  log.days[0].observations.forEach(o => o.aggregateDate='2026-09-02');
+  latest.rankings[110854] = [];
+  assert.equal(dataHealth(latest,null,log,now).dailyState, 'published');
+});
 const snap = (day, genres, extra = {}) => ({ day, key: day, basis: 'aggregate', aggregateDate: day, capturedAt: `${day}T20:30:00+09:00`, genres, ...extra });
 
 test('auto-fetch outcomes remain visible until the new daily snapshot is published', () => {

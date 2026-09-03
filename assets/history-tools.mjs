@@ -103,14 +103,23 @@ export function dataHealth(daily, realtime, log, now = Date.now()) {
   const attempt = observations.filter(o => o.autoDailyFetch?.aggregateDate === today).at(-1)?.autoDailyFetch;
   const age = last ? now - Date.parse(last.capturedAt) : Infinity;
   const day = validDay(daily?.aggregateDate);
+  const minimums = {};
+  for (const observation of observations) {
+    if (day && observation.aggregateDate === day) {
+      for (const [genre, rows] of Object.entries(observation.ranks || {})) {
+        minimums[genre] = Math.max(minimums[genre] || 0, Math.min(30, Object.keys(rows).length));
+      }
+    }
+  }
+  const missingGenres = Object.keys(minimums).filter(genre => (daily?.rankings?.[genre]?.length || 0) < minimums[genre]);
   let dailyState = 'unknown';
-  if (day === today) dailyState = 'published';
+  if (day === today) dailyState = missingGenres.length ? 'incomplete' : 'published';
   else if (seen) dailyState = 'pending';
   else if (last && jstDay(last.capturedAt) === today && age <= 2 * 3600000 && validDay(last.aggregateDate) && last.aggregateDate < today) dailyState = 'not-detected';
   const rtTime = Date.parse(realtime?.generatedAt);
   const realtimeState = !Number.isFinite(rtTime) ? 'unknown' : rtTime > now + 300000 ? 'clock' : now - rtTime > 45 * 60000 ? 'stale' : 'fresh';
   return { today, dailyState, publishedDay: day, lastObservation: last?.capturedAt || null, observedDay: last?.aggregateDate || null,
-    firstSeen: seen?.capturedAt || null, observationStale: age > 2 * 3600000,
+    firstSeen: seen?.capturedAt || null, observationStale: age > 2 * 3600000, missingGenres,
     autoFetchState: attempt?.status || null, autoFetchAt: attempt?.finishedAt || attempt?.startedAt || null,
     dailyStale: !!day && day < jstDay(now - 86400000), realtimeState, realtimeAt: realtime?.generatedAt || null };
 }
