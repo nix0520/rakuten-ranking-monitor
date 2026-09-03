@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MAX_RANK = 1000
 MAX_PAGES = 34
 HISTORY_DAYS = 30
+DAILY_COLLECTION_VERSION = 2
 PROMOTION_PATTERN = re.compile(r"(?:クーポン|OFF|割引|値引|セール|ポイント(?:アップ|還元|倍))", re.IGNORECASE)
 ELEMENTS = ",".join(
     [
@@ -167,10 +168,17 @@ def fetch_category(
     collected: list[dict[str, Any]] = []
     source_build_at: str | None = None
     max_pages = min(MAX_PAGES, (max_rank + 29) // 30)
+    full_daily = period is None and max_rank > 30
+    seen_codes: set[str] = set()
     for page in range(1, max_pages + 1):
-        payload = request_fn(
-            int(category["id"]), page, application_id, access_key, period=period
-        )
+        for attempt in range(3 if full_daily else 1):
+            payload = request_fn(
+                int(category["id"]), page, application_id, access_key, period=period
+            )
+            if payload.get("Items") or payload.get("items") or not full_daily or attempt == 2:
+                break
+            print(f"  Empty page {page}; retrying ({attempt + 1}/2)", flush=True)
+            sleep_fn(1.0)
         if payload.get("_notFound"):
             print(
                 f"  No ranking data for page {page}; keeping {len(collected)} rows",
@@ -182,8 +190,15 @@ def fetch_category(
         if raw_items and expected_date and source_date(payload.get("lastBuildDate")) != expected_date:
             raise RuntimeError(f"Daily source date mismatch for genre {category['id']} page {page}")
         page_items = [entry.get("Item", entry.get("item", entry)) for entry in raw_items]
-        collected.extend(normalize_item(item) for item in page_items if isinstance(item, dict))
-        if len(page_items) < 30:
+        normalized = [normalize_item(item) for item in page_items if isinstance(item, dict)]
+        valid = [item for item in normalized if item["itemCode"] and 1 <= item["rank"] <= max_rank]
+        if full_daily and page_items and not any(item["itemCode"] not in seen_codes for item in valid):
+            raise RuntimeError(f"Daily page made no valid progress for genre {category['id']} page {page}")
+        seen_codes.update(item["itemCode"] for item in valid)
+        collected.extend(normalized)
+        if not page_items or (not full_daily and len(page_items) < 30):
+            break
+        if valid and max(item["rank"] for item in valid) >= max_rank:
             break
         if page < max_pages:
             sleep_fn(1.0)
@@ -572,7 +587,32 @@ def fixture_request(path: Path) -> Callable[[int, int, str, str], dict[str, Any]
     return request
 
 
-def record_auto_daily_fetch(output_dir: Path, aggregate_date: str, status: str) -> None:
+class DailyCompletenessError(RuntimeError):
+    def __init__(self, missing_genres: list[str]):
+        self.missing_genres = missing_genres
+        super().__init__("Daily data below same-day observed minimum for genres: " + ", ".join(missing_genres))
+
+
+def daily_minimum_counts(output_dir: Path, aggregate_date: str | None) -> dict[str, int]:
+    """Only same-aggregate-day evidence; never use yesterday as today's data."""
+    if not aggregate_date:
+        return {}
+    counts: dict[str, int] = {}
+    log = load_json(output_dir / "daily-update-log.json", {"days": []})
+    for day in log.get("days", []):
+        for observation in day.get("observations", []):
+            if observation.get("aggregateDate") == aggregate_date:
+                for genre, rows in observation.get("ranks", {}).items():
+                    counts[genre] = max(counts.get(genre, 0), min(30, len(rows)))
+    latest = load_json(output_dir / "latest.json", {})
+    if latest.get("aggregateDate") == aggregate_date:
+        for genre, rows in latest.get("rankings", {}).items():
+            counts[genre] = max(counts.get(genre, 0), min(30, len(rows)))
+    return counts
+
+
+def record_auto_daily_fetch(output_dir: Path, aggregate_date: str, status: str,
+                           missing_genres: list[str] | None = None) -> None:
     """Attach the automatic-fetch outcome to the initiating probe, without secrets."""
     path = output_dir / "daily-update-log.json"
     log = load_json(path, {"days": []})
@@ -583,6 +623,8 @@ def record_auto_daily_fetch(output_dir: Path, aggregate_date: str, status: str) 
                 observation["autoDailyFetch"].update(
                     status=status, finishedAt=datetime.now(JST).isoformat(timespec="seconds")
                 )
+                if missing_genres:
+                    observation["autoDailyFetch"].update(missingGenres=missing_genres, reason="missing_daily_rows")
                 write_json(path, log)
                 return
     if log["days"] and log["days"][-1].get("observations"):
@@ -590,6 +632,10 @@ def record_auto_daily_fetch(output_dir: Path, aggregate_date: str, status: str) 
             "aggregateDate": aggregate_date, "status": status,
             "startedAt": datetime.now(JST).isoformat(timespec="seconds"),
         }
+        if missing_genres:
+            log["days"][-1]["observations"][-1]["autoDailyFetch"].update(
+                missingGenres=missing_genres, reason="missing_daily_rows"
+            )
         write_json(path, log)
 
 
@@ -606,6 +652,9 @@ def needs_auto_daily_fetch(output_dir: Path, aggregate_date: str | None, today: 
         latest.get("generatedAt") and published_date == aggregate_date
         and expected.issubset(latest.get("rankings", {}))
         and any(latest.get("rankings", {}).values())
+        and latest.get("collectionVersion", 0) >= DAILY_COLLECTION_VERSION
+        and all(len(latest.get("rankings", {}).get(genre, [])) >= count
+                for genre, count in daily_minimum_counts(output_dir, aggregate_date).items())
     )
     return not complete
 
@@ -639,6 +688,7 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
             application_id,
             access_key,
             request_fn,
+            sleep_fn=(lambda _seconds: None) if args.fixture else time.sleep,
             max_rank=max_rank,
             period="realtime" if mode == "realtime" else None,
             expected_date=expected_daily_date,
@@ -662,10 +712,11 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
             daily_args = argparse.Namespace(**{**vars(args), "mode": "daily"})
             try:
                 run(daily_args, expected_daily_date=aggregate_date)
-            except Exception:
+            except Exception as error:
                 # The probe itself succeeded: publish the observation/failure status and
                 # leave the previous complete snapshot as the retry marker.
-                record_auto_daily_fetch(output_dir, aggregate_date, "failed")
+                record_auto_daily_fetch(output_dir, aggregate_date, "failed",
+                                        error.missing_genres if isinstance(error, DailyCompletenessError) else None)
                 print("Automatic full daily fetch failed; keeping the published daily ranking. "
                       "The next successful probe will retry.", file=sys.stderr, flush=True)
             else:
@@ -687,6 +738,19 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
         )
         return
 
+    minimums = daily_minimum_counts(output_dir, aggregate_date)
+    missing = [genre for genre, count in minimums.items() if len(rankings.get(genre, [])) < count]
+    if missing or not any(rankings.values()):
+        if expected_daily_date:
+            raise DailyCompletenessError(missing or [str(c["id"]) for c in categories])
+        # Let the Windows wrapper commit the failure observation instead of leaving
+        # a dirty worktree that would block its next pull/retry.
+        record_auto_daily_fetch(output_dir, aggregate_date, "failed",
+                                missing or [str(c["id"]) for c in categories])
+        print("Daily validation failed; retaining the published ranking. "
+              "Saved the failure observation for retry at the next probe.", file=sys.stderr)
+        return
+
     latest_path = output_dir / "latest.json"
     history_path = output_dir / "history.json"
     history = load_json(history_path, {"captures": []})
@@ -701,6 +765,7 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
         "sourceBuildAt": source_build_at,
         "categories": categories,
         "rankings": rankings,
+        "collectionVersion": DAILY_COLLECTION_VERSION,
     }
     write_json(
         history_path,

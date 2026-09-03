@@ -125,6 +125,17 @@ function historicalApp() {
   return a;
 }
 
+test('empty genre with same-day positive probe is labeled missing, not a search problem', async () => {
+  const a = historicalApp();
+  a.run(`const day = jstDay(Date.now()); state.dailyLatest.aggregateDate=day;
+    state.dailyLatest.generatedAt=new Date().toISOString(); state.dailyLatest.rankings={1:[]};
+    state.updateLog={days:[{observations:[{capturedAt:new Date().toISOString(),aggregateDate:day,ranks:{1:{'shop:a':1}}}]}]};`);
+  await a.run('refreshView()');
+  assert.match(a.element('#healthTitle').textContent, /数据缺失/);
+  assert.match(a.element('#emptyState').textContent, /采集异常/);
+  assert.equal(a.element('#dataHealth').dataset.level, 'bad');
+});
+
 test('failed automatic daily fetch warns about retry, but published data clears the warning', () => {
   const a = app();
   a.run(`const now = new Date().toISOString(); const today = jstDay(Date.now());
