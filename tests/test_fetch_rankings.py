@@ -153,6 +153,28 @@ class RankingTests(unittest.TestCase):
         self.assertIn("クーポン利用で¥3,090円", fixed["promotionHints"])
         self.assertEqual(unknown["promotionHints"][0], "クーポン（割引額不明）")
 
+    def test_standalone_discount_keeps_amount_without_calling_it_a_coupon(self):
+        base = {"rank": 1, "itemCode": "shop:item", "itemPrice": 2951}
+        direct = fetch.normalize_item({
+            **base,
+            "itemName": "＼何枚でも50％OFF／新色入荷",
+        })
+        half = fetch.normalize_item({
+            **base,
+            "itemName": "何点でも半額",
+        })
+        coupon = fetch.normalize_item({
+            **base,
+            "itemName": "50%OFFクーポン",
+        })
+        self.assertIn("何枚でも50%OFF", direct["promotionHints"])
+        self.assertFalse(direct["couponMentioned"])
+        self.assertIn("何点でも半額", half["promotionHints"])
+        self.assertFalse(half["couponMentioned"])
+        self.assertIn("50%OFFクーポン", coupon["promotionHints"])
+        self.assertNotIn("50%OFF", coupon["promotionHints"])
+        self.assertTrue(coupon["couponMentioned"])
+
     def test_coupon_backfill_uses_each_historical_days_own_product_text(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
