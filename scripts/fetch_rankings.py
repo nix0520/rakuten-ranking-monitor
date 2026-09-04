@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -36,7 +37,17 @@ MAX_RANK = 1000
 MAX_PAGES = 34
 HISTORY_DAYS = 30
 DAILY_COLLECTION_VERSION = 2
-PROMOTION_PATTERN = re.compile(r"(?:クーポン|OFF|割引|値引|セール|ポイント(?:アップ|還元|倍))", re.IGNORECASE)
+COUPON_DETAIL_PATTERNS = (
+    re.compile(r"(?:最大\s*)?\d{1,3}(?:\.\d+)?\s*%\s*OFF\s*クーポン", re.IGNORECASE),
+    re.compile(r"(?:最大\s*)?[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円\s*(?:OFF|割引|引き|値引き)\s*クーポン", re.IGNORECASE),
+    re.compile(r"(?:最大\s*)?[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円\s*クーポン", re.IGNORECASE),
+    re.compile(r"(?:半額|送料無料)\s*クーポン", re.IGNORECASE),
+    re.compile(r"クーポン(?:利用)?で\s*(?:税込)?\s*[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円", re.IGNORECASE),
+)
+PROMOTION_PATTERN = re.compile(
+    r"(?:セール|割引|値引|ポイント(?:\s*\d+(?:\.\d+)?\s*倍|アップ|還元))",
+    re.IGNORECASE,
+)
 ELEMENTS = ",".join(
     [
         "lastBuildDate",
@@ -86,10 +97,20 @@ def image_url(value: Any) -> str:
 
 
 def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
-    promotion_text = " ".join(
+    promotion_text = unicodedata.normalize("NFKC", " ".join(
         str(item.get(field) or "") for field in ("catchcopy", "itemCaption", "itemName")
-    )
-    hints = list(dict.fromkeys(match.group(0) for match in PROMOTION_PATTERN.finditer(promotion_text)))
+    ))
+    coupon_hints = [
+        re.sub(r"\s+", "", match.group(0))
+        for pattern in COUPON_DETAIL_PATTERNS
+        for match in pattern.finditer(promotion_text)
+    ]
+    hints = list(dict.fromkeys([
+        *coupon_hints,
+        *(re.sub(r"\s+", "", match.group(0)) for match in PROMOTION_PATTERN.finditer(promotion_text)),
+    ]))
+    if "クーポン" in promotion_text and not coupon_hints:
+        hints.insert(0, "クーポン（割引額不明）")
     return {
         "rank": int(item.get("rank") or 0),
         "itemName": str(item.get("itemName") or ""),
@@ -109,7 +130,7 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
         "pointRateStartAt": str(item.get("pointRateStartTime") or ""),
         "pointRateEndAt": str(item.get("pointRateEndTime") or ""),
         "promotionHints": hints[:8],
-        "couponMentioned": any("クーポン" in hint for hint in hints),
+        "couponMentioned": "クーポン" in promotion_text,
     }
 
 

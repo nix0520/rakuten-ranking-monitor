@@ -66,6 +66,21 @@ test('detail dialog renders charts, explicit missing values, safe title and clos
   assert.equal(a.element('#productDialog').open, false);
 });
 
+test('selected daily date shows coupon amount and observed date range', async () => {
+  const a = app();
+  a.run(`state.dailyLatest = {generatedAt:'2026-09-02T15:10:00+09:00',aggregateDate:'2026-09-02',categories:state.latest.categories,
+    rankings:{1:[{itemCode:'a',itemName:'20%OFFクーポン対象',rank:1,itemPrice:1000,pointRate:1,promotionHints:['20%OFFクーポン']}]}}; 
+    state.history.captures=[
+      {capturedAt:'2026-09-01T15:10:00+09:00',aggregateDate:'2026-09-01',genres:{1:{a:2}},metrics:{1:{a:{itemPrice:1200,pointRate:1,promotionHints:['20%OFFクーポン']}}}},
+      {capturedAt:'2026-09-02T15:10:00+09:00',aggregateDate:'2026-09-02',genres:{1:{a:1}},metrics:{1:{a:{itemPrice:1000,pointRate:1,promotionHints:['20%OFFクーポン']}}}}
+    ]; refreshView()`);
+  assert.match(a.element('#rankingBody').innerHTML, /20%OFFクーポン/);
+  assert.match(a.element('#rankingBody').innerHTML, /検出期間 2026-09-01～2026-09-02/);
+  await a.run('openDetail(state.rows[0])');
+  assert.match(a.element('#detailBody').innerHTML, /クーポン検出履歴/);
+  assert.match(a.element('#detailBody').innerHTML, /2026-09-01～2026-09-02に連続検出/);
+});
+
 test('zero-rank history and gaps produce no invalid SVG coordinates', () => {
   const a = app();
   assert.match(a.run('sparkline([])'), /履歴蓄積中/);

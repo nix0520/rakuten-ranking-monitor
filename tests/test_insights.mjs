@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dailySeries, filterAndSort, readWatchlist, rolloverWindow, validDay, jstDay } from '../assets/insights.mjs';
+import { dailySeries, couponPeriods, filterAndSort, readWatchlist, rolloverWindow, validDay, jstDay } from '../assets/insights.mjs';
 
 test('daily dates use aggregate dates, deduplicate same day and preserve missing prices', () => {
   const captures = [
@@ -13,6 +13,20 @@ test('daily dates use aggregate dates, deduplicate same day and preserve missing
   assert.equal(series[0].rank, 6);
   assert.equal(series[0].itemPrice, null);
   assert.equal(series[1].pointRate, 5);
+});
+
+test('coupon periods preserve amounts and split gaps or changed offers', () => {
+  const points = [
+    {day:'2026-09-01', promotionHints:['20%OFFクーポン']},
+    {day:'2026-09-02', promotionHints:['20%OFFクーポン']},
+    {day:'2026-09-03', promotionHints:[]},
+    {day:'2026-09-04', promotionHints:['20%OFFクーポン','500円OFFクーポン']},
+  ];
+  assert.deepEqual(couponPeriods(points), [
+    {label:'20%OFFクーポン', start:'2026-09-01', end:'2026-09-02', days:['2026-09-01','2026-09-02']},
+    {label:'20%OFFクーポン', start:'2026-09-04', end:'2026-09-04', days:['2026-09-04']},
+    {label:'500円OFFクーポン', start:'2026-09-04', end:'2026-09-04', days:['2026-09-04']},
+  ]);
 });
 
 test('legacy history is explicitly labeled as capture date and missing ranks stay null', () => {

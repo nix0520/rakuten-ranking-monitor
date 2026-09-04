@@ -40,6 +40,32 @@ export function dailySeries(captures, genre, code, days, now = Date.now()) {
   }).filter(point => point.day >= cutoff);
 }
 
+export function couponPeriods(points) {
+  const periods = [];
+  const lastByLabel = new Map();
+  [...points].sort((a, b) => a.day.localeCompare(b.day)).forEach(point => {
+    const labels = [...new Set((point.promotionHints || []).filter(hint =>
+      typeof hint === "string" && hint.includes("クーポン")
+    ))];
+    for (const label of labels) {
+      const previous = lastByLabel.get(label);
+      const dayTime = Date.parse(`${point.day}T00:00:00Z`);
+      if (previous && dayTime - Date.parse(`${previous.end}T00:00:00Z`) === 86400000) {
+        previous.end = point.day;
+        previous.days.push(point.day);
+      } else {
+        const period = { label, start: point.day, end: point.day, days: [point.day] };
+        periods.push(period);
+        lastByLabel.set(label, period);
+      }
+    }
+    for (const [label, period] of lastByLabel) {
+      if (!labels.includes(label) && period.end < point.day) lastByLabel.delete(label);
+    }
+  });
+  return periods;
+}
+
 export function filterAndSort(rows, filter, watchedOnly, watchlist) {
   const selected = rows.filter(row => (!watchedOnly || watchlist.has(row.itemCode)) &&
     (filter === "all" || (filter === "exited" ? row.comparisonState === "exited" : filter === "new" ? row.isNew :
