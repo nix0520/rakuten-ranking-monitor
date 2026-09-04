@@ -47,10 +47,10 @@ COUPON_DETAIL_PATTERNS = (
 )
 DISCOUNT_DETAIL_PATTERNS = (
     re.compile(
-        r"(?:何枚でも|何点でも|何個でも)?\\s*(?:最大\\s*)?\\d{1,3}(?:\\.\\d+)?\\s*%\\s*OFF(?!\\s*クーポン)",
+        r"(?:何枚でも|何点でも|何個でも)?\s*(?:最大\s*)?\d{1,3}(?:\.\d+)?\s*%\s*OFF(?!\s*クーポン)",
         re.IGNORECASE,
     ),
-    re.compile(r"(?:何枚でも|何点でも|何個でも)?\\s*半額(?!\\s*クーポン)", re.IGNORECASE),
+    re.compile(r"(?:何枚でも|何点でも|何個でも)?\s*半額(?!\s*クーポン)", re.IGNORECASE),
 )
 PROMOTION_PATTERN = re.compile(
     r"(?:セール|割引|値引|ポイント(?:\s*\d+(?:\.\d+)?\s*倍|アップ|還元))",
