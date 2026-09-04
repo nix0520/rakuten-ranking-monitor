@@ -659,11 +659,34 @@ def needs_auto_daily_fetch(output_dir: Path, aggregate_date: str | None, today: 
     return not complete
 
 
+def current_daily_is_complete(output_dir: Path, today: str,
+                              categories: list[dict[str, Any]]) -> bool:
+    """Avoid even a lightweight API call after today's verified daily was published."""
+    latest = load_json(output_dir / "latest.json", {})
+    expected = {str(category["id"]) for category in categories}
+    minimums = daily_minimum_counts(output_dir, today)
+    return bool(
+        latest.get("generatedAt")
+        and source_date(latest.get("aggregateDate")) == today
+        and latest.get("collectionVersion", 0) >= DAILY_COLLECTION_VERSION
+        and expected.issubset(latest.get("rankings", {}))
+        and any(latest.get("rankings", {}).values())
+        and all(len(latest.get("rankings", {}).get(genre, [])) >= count
+                for genre, count in minimums.items())
+    )
+
+
 def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> None:
     categories = load_json(Path(args.categories), [])
     validate_categories(categories)
     output_dir = Path(args.output_dir)
     mode = args.mode
+
+    if mode == "daily-probe":
+        today = datetime.now(JST).date().isoformat()
+        if current_daily_is_complete(output_dir, today, categories):
+            print(f"Daily ranking for {today} is already complete; probe skipped.")
+            return
 
     if args.fixture:
         application_id, access_key = "fixture", "fixture"

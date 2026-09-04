@@ -47,16 +47,7 @@ function New-RankingAction {
 }
 
 $probeTriggers = @(
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 9 50)
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 10 0)
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 10 10)
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 19 50)
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 20 0)
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 20 10)
-)
-$dailyTriggers = @(
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 10 30)
-    New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 20 30)
+    15..23 | ForEach-Object { New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal $_ 0) }
 )
 $realtimeStart = Convert-JstTimeToLocal 0 5
 $realtimeTrigger = New-ScheduledTaskTrigger -Once -At $realtimeStart `
@@ -67,18 +58,19 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 
-$probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Observe the Rakuten daily ranking rollover at 09:50, 10:00, 10:10, 19:50, 20:00 and 20:10 JST."
-$dailyTask = New-ScheduledTask -Action (New-RankingAction "daily") -Trigger $dailyTriggers -Settings $settings -Principal $principal -Description "Fetch all 17 daily rankings at 10:30 and 20:30 JST."
+$probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Probe hourly from 15:00 through 23:00 JST until today's complete daily ranking is published."
 $realtimeTask = New-ScheduledTask -Action (New-RankingAction "realtime") -Trigger $realtimeTrigger -Settings $settings -Principal $principal -Description "Fetch all 17 realtime rankings every 20 minutes."
 
 Unregister-ScheduledTask -TaskName "Rakuten Ranking Monitor" -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName "Rakuten Ranking Daily Probe" -InputObject $probeTask -Force | Out-Null
-Register-ScheduledTask -TaskName "Rakuten Ranking Daily" -InputObject $dailyTask -Force | Out-Null
+Unregister-ScheduledTask -TaskName "Rakuten Ranking Daily" -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "Rakuten Ranking Hourly Probe Today" -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "Rakuten Ranking Hourly Probe 3 Days" -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName "Rakuten Ranking Realtime" -InputObject $realtimeTask -Force | Out-Null
 
 Write-Host "Scheduled task installed successfully."
-Write-Host "JST daily probes: 09:50, 10:00, 10:10, 19:50, 20:00, 20:10"
-Write-Host "JST full daily fetches: 10:30, 20:30"
+Write-Host "JST daily: probe at 15:00, then hourly through 23:00 until fully published"
+Write-Host "Full daily fetch: starts automatically when a probe detects today's aggregate date"
 Write-Host "JST realtime 17-genre rankings: every 20 minutes at :05, :25, :45"
 Write-Host "Running a lightweight daily probe now..."
 
