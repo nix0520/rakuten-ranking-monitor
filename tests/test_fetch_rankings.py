@@ -175,6 +175,28 @@ class RankingTests(unittest.TestCase):
         self.assertNotIn("50%OFF", coupon["promotionHints"])
         self.assertTrue(coupon["couponMentioned"])
 
+    def test_coupon_hints_support_amount_before_and_after_coupon_word(self):
+        base = {"rank": 1, "itemCode": "shop:item", "itemPrice": 3000}
+        live = fetch.normalize_item({
+            **base,
+            "itemName": "4日20時～ライブクーポンで30％OFF",
+        })
+        percent = fetch.normalize_item({
+            **base,
+            "itemName": "P5倍×最大20%クーポン",
+        })
+        fixed = fetch.normalize_item({
+            **base,
+            "itemName": "最大799円★クーポン利用で",
+        })
+        self.assertIn("ライブクーポンで30%OFF", live["promotionHints"])
+        self.assertNotIn("30%OFF", live["promotionHints"])
+        self.assertIn("最大20%クーポン", percent["promotionHints"])
+        self.assertIn("最大799円★クーポン利用で", fixed["promotionHints"])
+        self.assertTrue(live["couponMentioned"])
+        self.assertTrue(percent["couponMentioned"])
+        self.assertTrue(fixed["couponMentioned"])
+
     def test_coupon_backfill_uses_each_historical_days_own_product_text(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)

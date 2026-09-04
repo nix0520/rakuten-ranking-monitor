@@ -37,13 +37,25 @@ MAX_RANK = 1000
 MAX_PAGES = 34
 HISTORY_DAYS = 30
 DAILY_COLLECTION_VERSION = 2
-COUPON_HISTORY_VERSION = 2
+COUPON_HISTORY_VERSION = 3
 COUPON_DETAIL_PATTERNS = (
     re.compile(r"(?:最大\s*)?\d{1,3}(?:\.\d+)?\s*%\s*OFF\s*クーポン", re.IGNORECASE),
     re.compile(r"(?:最大\s*)?[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円\s*(?:OFF|割引|引き|値引き)\s*クーポン", re.IGNORECASE),
     re.compile(r"(?:最大\s*)?[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円\s*クーポン", re.IGNORECASE),
     re.compile(r"(?:半額|送料無料)\s*クーポン", re.IGNORECASE),
     re.compile(r"クーポン(?:利用)?で\s*(?:税込)?\s*[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円", re.IGNORECASE),
+    re.compile(
+        r"(?:ライブ\s*)?クーポン(?:利用)?で\s*\d{1,3}(?:\.\d+)?\s*%\s*OFF",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:最大\s*)?\d{1,3}(?:\.\d+)?\s*%\s*(?:OFF\s*)?クーポン",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"(?:最大\s*)?[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円\s*[★☆・／/｜|:：-]*\s*クーポン(?:利用)?で",
+        re.IGNORECASE,
+    ),
 )
 DISCOUNT_DETAIL_PATTERNS = (
     re.compile(
@@ -117,6 +129,10 @@ def extract_promotion_hints(*values: Any) -> list[str]:
         re.sub(r"\s+", "", match.group(0))
         for pattern in DISCOUNT_DETAIL_PATTERNS
         for match in pattern.finditer(promotion_text)
+    ]
+    discount_hints = [
+        hint for hint in discount_hints
+        if not any(hint in coupon_hint for coupon_hint in coupon_hints)
     ]
     hints = list(dict.fromkeys([
         *coupon_hints,
