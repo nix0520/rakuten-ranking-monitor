@@ -153,6 +153,45 @@ class RankingTests(unittest.TestCase):
         self.assertIn("クーポン利用で¥3,090円", fixed["promotionHints"])
         self.assertEqual(unknown["promotionHints"][0], "クーポン（割引額不明）")
 
+    def test_coupon_backfill_uses_each_historical_days_own_product_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            day = "2026-09-01"
+            fetch.write_json(output / f"history/{day}.json", {
+                "capturedAt": f"{day}T15:10:00+09:00",
+                "aggregateDate": day,
+                "metrics": {"1": {"shop:item": {"promotionHints": ["OFF", "クーポン"]}}},
+                "genres": {"1": {"shop:item": 1}},
+            })
+            fetch.write_json(output / f"history-products/{day}.json", {
+                "products": {"shop:item": {
+                    "itemName": "当日は20%OFFクーポン",
+                    "catchcopy": "",
+                }}
+            })
+            fetch.write_json(output / "latest.json", {
+                "generatedAt": f"{day}T15:10:00+09:00",
+                "aggregateDate": day,
+                "rankings": {"1": [{
+                    "itemCode": "shop:item",
+                    "itemName": "今日は500円OFFクーポン",
+                    "catchcopy": "",
+                    "promotionHints": ["OFF", "クーポン"],
+                }]},
+            })
+            self.assertEqual(fetch.backfill_coupon_history(output), 2)
+            history = fetch.load_json(output / f"history/{day}.json", {})
+            latest = fetch.load_json(output / "latest.json", {})
+            self.assertEqual(
+                history["metrics"]["1"]["shop:item"]["promotionHints"],
+                ["20%OFFクーポン"],
+            )
+            self.assertEqual(
+                latest["rankings"]["1"][0]["promotionHints"],
+                ["500円OFFクーポン"],
+            )
+            self.assertEqual(fetch.backfill_coupon_history(output), 0)
+
     def test_fetch_category_returns_up_to_top_1000(self):
         calls = []
 

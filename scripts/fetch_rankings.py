@@ -37,6 +37,7 @@ MAX_RANK = 1000
 MAX_PAGES = 34
 HISTORY_DAYS = 30
 DAILY_COLLECTION_VERSION = 2
+COUPON_HISTORY_VERSION = 1
 COUPON_DETAIL_PATTERNS = (
     re.compile(r"(?:最大\s*)?\d{1,3}(?:\.\d+)?\s*%\s*OFF\s*クーポン", re.IGNORECASE),
     re.compile(r"(?:最大\s*)?[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円\s*(?:OFF|割引|引き|値引き)\s*クーポン", re.IGNORECASE),
@@ -96,10 +97,10 @@ def image_url(value: Any) -> str:
     return str(first)
 
 
-def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
-    promotion_text = unicodedata.normalize("NFKC", " ".join(
-        str(item.get(field) or "") for field in ("catchcopy", "itemCaption", "itemName")
-    ))
+def extract_promotion_hints(*values: Any) -> list[str]:
+    promotion_text = unicodedata.normalize(
+        "NFKC", " ".join(str(value or "") for value in values)
+    )
     coupon_hints = [
         re.sub(r"\s+", "", match.group(0))
         for pattern in COUPON_DETAIL_PATTERNS
@@ -111,6 +112,14 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
     ]))
     if "クーポン" in promotion_text and not coupon_hints:
         hints.insert(0, "クーポン（割引額不明）")
+    return hints[:8]
+
+
+def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
+    promotion_text = " ".join(
+        str(item.get(field) or "") for field in ("catchcopy", "itemCaption", "itemName")
+    )
+    hints = extract_promotion_hints(promotion_text)
     return {
         "rank": int(item.get("rank") or 0),
         "itemName": str(item.get("itemName") or ""),
@@ -130,8 +139,63 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
         "pointRateStartAt": str(item.get("pointRateStartTime") or ""),
         "pointRateEndAt": str(item.get("pointRateEndTime") or ""),
         "promotionHints": hints[:8],
-        "couponMentioned": "クーポン" in promotion_text,
+        "couponMentioned": "クーポン" in unicodedata.normalize("NFKC", promotion_text),
     }
+
+
+def merge_saved_promotion_hints(existing: Any, product: dict[str, Any]) -> list[str]:
+    """Reparse only text saved on that historical day; never use today's metadata."""
+    reparsed = extract_promotion_hints(product.get("itemName"), product.get("catchcopy"))
+    old = existing if isinstance(existing, list) else []
+    generic = {"OFF", "クーポン"}
+    return list(dict.fromkeys([
+        *reparsed,
+        *(hint for hint in old if isinstance(hint, str) and hint not in generic),
+    ]))[:8]
+
+
+def backfill_coupon_history(output_dir: Path) -> int:
+    """Upgrade saved daily snapshots once when their own dated product text is available."""
+    upgraded = 0
+    history_dir = output_dir / "history"
+    products_dir = output_dir / "history-products"
+    if history_dir.exists() and products_dir.exists():
+        for history_path in history_dir.glob("????-??-??.json"):
+            capture = load_json(history_path, {})
+            if capture.get("couponHistoryVersion", 0) >= COUPON_HISTORY_VERSION:
+                continue
+            product_path = products_dir / history_path.name
+            if not product_path.exists():
+                continue
+            products = load_json(product_path, {}).get("products", {})
+            for genre_metrics in capture.get("metrics", {}).values():
+                for code, metric in genre_metrics.items():
+                    product = products.get(code)
+                    if product:
+                        metric["promotionHints"] = merge_saved_promotion_hints(
+                            metric.get("promotionHints"), product
+                        )
+            capture["couponHistoryVersion"] = COUPON_HISTORY_VERSION
+            write_json(history_path, capture)
+            upgraded += 1
+
+    latest_path = output_dir / "latest.json"
+    latest = load_json(latest_path, {})
+    if latest.get("generatedAt") and latest.get("couponHistoryVersion", 0) < COUPON_HISTORY_VERSION:
+        changed = False
+        for items in latest.get("rankings", {}).values():
+            for item in items:
+                hints = merge_saved_promotion_hints(
+                    item.get("promotionHints"), item
+                )
+                if hints != item.get("promotionHints", []):
+                    item["promotionHints"] = hints
+                    changed = True
+        if changed:
+            latest["couponHistoryVersion"] = COUPON_HISTORY_VERSION
+            write_json(latest_path, latest)
+            upgraded += 1
+    return upgraded
 
 
 def api_request(
@@ -525,6 +589,7 @@ def update_history(
         "capturedAt": captured_at.isoformat(timespec="seconds"),
         "aggregateDate": aggregate_date,
         "rankLimit": MAX_RANK,
+        "couponHistoryVersion": COUPON_HISTORY_VERSION,
         "products": {
             item["itemCode"]: {
                 field: item.get(field)
@@ -704,6 +769,9 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
     mode = args.mode
 
     if mode == "daily-probe":
+        upgraded = backfill_coupon_history(output_dir)
+        if upgraded:
+            print(f"Upgraded coupon details in {upgraded} saved daily snapshots.")
         today = datetime.now(JST).date().isoformat()
         if current_daily_is_complete(output_dir, today, categories):
             print(f"Daily ranking for {today} is already complete; probe skipped.")
@@ -810,6 +878,7 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
         "categories": categories,
         "rankings": rankings,
         "collectionVersion": DAILY_COLLECTION_VERSION,
+        "couponHistoryVersion": COUPON_HISTORY_VERSION,
     }
     write_json(
         history_path,
