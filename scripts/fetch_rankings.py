@@ -130,6 +130,10 @@ def extract_promotion_hints(*values: Any) -> list[str]:
         for pattern in DISCOUNT_DETAIL_PATTERNS
         for match in pattern.finditer(promotion_text)
     ]
+    discount_hints = [
+        hint for hint in discount_hints
+        if not any(hint in coupon_hint for coupon_hint in coupon_hints)
+    ]
     hints = list(dict.fromkeys([
         *coupon_hints,
         *discount_hints,
