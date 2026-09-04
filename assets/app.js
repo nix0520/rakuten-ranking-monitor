@@ -314,7 +314,7 @@ function render() {
   const detected = updateDay ? rolloverWindow(updateDay).first?.capturedAt : null;
   $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜首次切替";
   $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (detected ? dateTime.format(new Date(detected)) : "判定待ち");
-  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "09:50 / 19:50から観測");
+  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "15:00から毎時観測（公開後スキップ）");
   const selected = selectedCategories();
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${state.group === "bra" ? "Bra" : "ショーツ"}グループ · ${selected.length}ジャンル`;
   $("#comparisonNote").textContent = state.mode === "daily" ? `日榜：${state.viewSnapshot?.day || "最新"} vs ${state.baselineSnapshot?.day || "過去日未記録"}。価格・ポイントも同じ2日の取得時点を比較。通常上位100位、全保存順位も選択可。` : `リアルタイム：前回の成功した取得との比較（通常20分間隔）。前回：${formatStamp(state.realtimeLatest?.previousCapturedAt)}。`;

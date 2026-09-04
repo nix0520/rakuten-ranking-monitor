@@ -66,7 +66,7 @@ class AutoDailyTests(unittest.TestCase):
         self.assertEqual(item["previousRank"], 5)
         self.assertEqual(self.attempts()[0]["status"], "succeeded")
         self.run_probe()
-        self.assertEqual(len(self.calls), 51)  # only 17 lightweight calls on repeat
+        self.assertEqual(len(self.calls), 34)  # published day skips before the API
         self.assertEqual(fetch.load_json(self.output / "latest.json", {}), latest)
         self.assertEqual(len(self.attempts()), 1)
 
@@ -94,6 +94,45 @@ class AutoDailyTests(unittest.TestCase):
         self.run_probe()
         self.assertEqual(len(self.calls), 34)
         self.assertEqual(self.attempts()[0]["status"], "succeeded")
+
+    def test_complete_current_daily_skips_probe_before_api_request(self):
+        complete = {
+            **self.previous,
+            "aggregateDate": self.today,
+            "generatedAt": self.now.isoformat(),
+            "collectionVersion": fetch.DAILY_COLLECTION_VERSION,
+        }
+        fetch.write_json(self.output / "latest.json", complete)
+        self.assertTrue(fetch.current_daily_is_complete(
+            self.output, self.today, self.categories
+        ))
+        output = io.StringIO()
+        with patch.object(fetch, "fetch_category", side_effect=AssertionError("API must not run")), \
+                contextlib.redirect_stdout(output):
+            fetch.run(self.args)
+        self.assertIn("already complete; probe skipped", output.getvalue())
+
+    def test_incomplete_or_old_daily_does_not_skip_probe(self):
+        complete = {
+            **self.previous,
+            "aggregateDate": self.today,
+            "generatedAt": self.now.isoformat(),
+            "collectionVersion": fetch.DAILY_COLLECTION_VERSION,
+        }
+        missing_genre = str(self.categories[0]["id"])
+        complete["rankings"] = {
+            genre: rows for genre, rows in self.old_rows.items() if genre != missing_genre
+        }
+        fetch.write_json(self.output / "latest.json", complete)
+        self.assertFalse(fetch.current_daily_is_complete(
+            self.output, self.today, self.categories
+        ))
+        complete["aggregateDate"] = self.yesterday
+        complete["rankings"] = self.old_rows
+        fetch.write_json(self.output / "latest.json", complete)
+        self.assertFalse(fetch.current_daily_is_complete(
+            self.output, self.today, self.categories
+        ))
 
     def test_failed_history_write_does_not_mark_day_complete(self):
         with patch.object(fetch, "update_history", side_effect=OSError("disk full")):
@@ -159,7 +198,7 @@ class AutoDailyTests(unittest.TestCase):
         self.run_probe()
         self.assertEqual(len(self.calls), 34)
         self.run_probe()
-        self.assertEqual(len(self.calls), 51)
+        self.assertEqual(len(self.calls), 34)
 
     def test_consistently_empty_current_day_does_not_copy_yesterday(self):
         genre = str(self.categories[0]["id"])
