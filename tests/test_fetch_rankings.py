@@ -134,6 +134,24 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(dictionary_image["itemPrice"], 1234)
         self.assertEqual(dictionary_image["pointRate"], 5)
         self.assertTrue(dictionary_image["couponMentioned"])
+        self.assertIn("10%OFFクーポン", dictionary_image["promotionHints"])
+
+    def test_coupon_hints_keep_discount_amount_and_normalize_full_width_text(self):
+        base = {"rank": 1, "itemCode": "shop:item", "itemPrice": 3590}
+        percent = fetch.normalize_item({
+            **base, "itemName": "【9/4 20時～】２０％ＯＦＦクーポン対象",
+            "catchcopy": "ポイント10倍",
+        })
+        fixed = fetch.normalize_item({
+            **base, "itemName": "500円OFFクーポン配布中",
+            "catchcopy": "クーポン利用で￥3,090円",
+        })
+        unknown = fetch.normalize_item({**base, "itemName": "クーポン対象"})
+        self.assertIn("20%OFFクーポン", percent["promotionHints"])
+        self.assertIn("ポイント10倍", percent["promotionHints"])
+        self.assertIn("500円OFFクーポン", fixed["promotionHints"])
+        self.assertIn("クーポン利用で¥3,090円", fixed["promotionHints"])
+        self.assertEqual(unknown["promotionHints"][0], "クーポン（割引額不明）")
 
     def test_fetch_category_returns_up_to_top_1000(self):
         calls = []

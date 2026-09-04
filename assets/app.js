@@ -1,4 +1,4 @@
-import { WATCH_KEY, jstDay, dailySeries, filterAndSort, readWatchlist, rolloverWindow } from "./insights.mjs";
+import { WATCH_KEY, jstDay, dailySeries, couponPeriods, filterAndSort, readWatchlist, rolloverWindow } from "./insights.mjs";
 import { archiveSnapshots, referenceProducts, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist as watchlistJson } from "./history-tools.mjs";
 
 const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "" };
@@ -167,6 +167,21 @@ function priceMovement(row) {
   return pieces.length ? `<span class="promo">${escapeHtml(pieces.join(" · "))}</span>` : '<span class="meta">価格・ポイント比較：記録不足</span>';
 }
 
+function couponObservation(row) {
+  if (state.mode !== "daily") return "";
+  const day = row.targetDate || state.latest?.aggregateDate;
+  if (!day) return "";
+  const periods = couponPeriods(dailySeries(
+    state.archive?.length ? state.archive : state.history?.captures || [],
+    row.category.id, row.itemCode, 30
+  )).filter(period => period.days.includes(day));
+  if (!periods.length) return "";
+  const ranges = periods.map(period => period.start === period.end
+    ? `検出日 ${period.start}`
+    : `検出期間 ${period.start}～${period.end}`);
+  return `<span class="meta coupon-period">${escapeHtml([...new Set(ranges)].join(" · "))}</span>`;
+}
+
 function rowTemplate(row) {
   const image = safeUrl(row.imageUrl)
     ? `<img src="${safeUrl(row.imageUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
@@ -177,7 +192,7 @@ function rowTemplate(row) {
     <td><div class="rank"><span class="rank-number">${row.rank ?? "—"}</span>${movement(row)}</div>${row.comparisonDate ? `<small class="meta">${row.comparisonDate}：${row.previousRank ?? "不在 / 未取得"}${row.previousRank != null ? "位" : ""}</small>` : ""}</td>
     <td><div class="product">${image}<div>${title}<div class="meta">${escapeHtml(row.itemCode)}</div><span class="genre-chip">${escapeHtml(row.category.name)}</span>${row.metadataBasis === "reference" ? '<small class="meta provenance">名称・画像・店舗は別時点の参考情報</small>' : row.metadataBasis === "missing" ? '<small class="meta provenance">当時の商品資料は未記録</small>' : ""}</div></div></td>
     <td>${shop}</td>
-    <td class="price">${Number.isFinite(row.itemPrice) ? yen.format(row.itemPrice) : "未記録"}${Number.isFinite(row.pointRate) ? `<span class="promo">ポイント${row.pointRate}倍</span>` : '<span class="meta">ポイント未記録</span>'}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}${priceMovement(row)}</td>
+    <td class="price">${Number.isFinite(row.itemPrice) ? yen.format(row.itemPrice) : "未記録"}${Number.isFinite(row.pointRate) ? `<span class="promo">ポイント${row.pointRate}倍</span>` : '<span class="meta">ポイント未記録</span>'}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}${couponObservation(row)}${priceMovement(row)}</td>
     <td><span class="rating">${Number.isFinite(row.reviewAverage) ? `★ ${row.reviewAverage.toFixed(2)}` : "未記録"}</span><span class="review-count">${Number.isFinite(row.reviewCount) ? `${row.reviewCount.toLocaleString("ja-JP")}件` : ""}</span></td>
     <td>${state.mode === "realtime" ? '<span class="spark-empty">前回取得比を順位横に表示</span>' : sparkline(trendPoints(row.category.id, row.itemCode))}
       <div class="row-actions"><button type="button" data-watch="${escapeHtml(row.itemCode)}" aria-pressed="${state.watchlist.has(row.itemCode)}">${state.watchlist.has(row.itemCode) ? "★ 保存済み" : "☆ お気に入り"}</button><button type="button" data-detail-code="${escapeHtml(row.itemCode)}" data-detail-genre="${row.category.id}">履歴詳細</button></div>
@@ -367,12 +382,20 @@ async function openDetail(row) {
   $("#detailTitle").textContent = row.itemName;
   if (state.mode === "daily") {
     const points = trendPoints(row.category.id, row.itemCode);
+    const coupons = couponPeriods(dailySeries(
+      state.archive?.length ? state.archive : state.history?.captures || [],
+      row.category.id, row.itemCode, 30
+    ));
+    const couponHistory = coupons.length
+      ? `<section class="metric-chart"><h3>クーポン検出履歴</h3><ul class="event-list">${coupons.map(period => `<li><strong>${escapeHtml(period.label)}</strong> — ${period.start === period.end ? `${period.start}に検出` : `${period.start}～${period.end}に連続検出`}</li>`).join("")}</ul><p>商品名・キャッチコピーに同じ券文言が記録された集計日の範囲です。実際の配布開始・終了日時とは限りません。</p></section>`
+      : `<section class="metric-chart"><h3>クーポン検出履歴</h3><p>記録された割引額付きクーポンはありません。</p></section>`;
     $("#detailBody").innerHTML = `<h3>日榜履歴 · 前回の集計日との比較</h3><p>${escapeHtml(row.category.name)} · ${escapeHtml(row.itemCode)} · 過去${state.days}日</p>
     <p>日榜は楽天集計日で表示。集計日がない旧記録のみ取得日と明記します。欠測は線を切り、価格・ポイントの未記録分は補完しません。</p>
     <p>各集計日につき1件。順位変動は直前の保存済み集計日との比較で、比較日を表に明記します。同日内の取得やリアルタイム順位とは比較しません。</p>
     ${metricChart(points, "rank", "日榜順位", "位", true)}
     ${metricChart(points, "itemPrice", "日榜取得時の商品価格", "円")}
     ${metricChart(points, "pointRate", "日榜取得時の商品ポイント", "倍")}
+    ${couponHistory}
     <div class="history-scroll"><table class="history-grid"><thead><tr><th>日付 / 基準</th><th>順位</th><th>前回日榜比</th><th>価格</th><th>ポイント</th><th>販促の手掛かり</th></tr></thead><tbody>${points.map(p => `<tr><td>${p.day}<small>${p.dateBasis === "aggregate" ? "集計日" : "取得日・集計日不明"}</small></td><td>${p.rank ?? "圏外 / 未取得"}</td><td>${dailyChangeLabel(p)}</td><td>${p.itemPrice === null ? "未記録" : yen.format(p.itemPrice)}</td><td>${p.pointRate === null ? "未記録" : `${p.pointRate}倍`}</td><td>${p.promotionHints === null ? "未記録" : escapeHtml(p.promotionHints.join(" · ") || "文言なし")}</td></tr>`).join("")}</tbody></table></div>
     <p>価格はAPIの商品価格です。券適用後の支払額や店舗共通ポイントを網羅しません。順位と販促の同時変化は因果関係を証明するものではありません。</p>`;
     $("#productDialog").showModal();
