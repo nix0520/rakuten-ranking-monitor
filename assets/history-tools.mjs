@@ -9,7 +9,9 @@ export function snapshotFromLatest(latest) {
     for (const row of rows) {
       genres[genre][row.itemCode] = row.rank;
       products[row.itemCode] = row;
-      metrics[genre][row.itemCode] = { itemPrice: row.itemPrice, pointRate: row.pointRate, promotionHints: row.promotionHints };
+      metrics[genre][row.itemCode] = { itemPrice: row.itemPrice, pointRate: row.pointRate, promotionHints: row.promotionHints,
+        reviewCount:row.reviewCount, reviewAverage:row.reviewAverage, itemName:row.itemName,
+        promotionText:[row.itemName,row.catchcopy].filter(Boolean).join(' '), pointEvidence:row.pointEvidence };
     }
   }
   return { capturedAt: latest.generatedAt, aggregateDate: latest.aggregateDate, sourceBuildAt: latest.sourceBuildAt, genres, products, metrics };

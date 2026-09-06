@@ -87,6 +87,30 @@
       <p>毎日15:00に完全取得。検出時刻と完全日榜の取得時刻を分けて表示します。過去に観測した切替区間は詳細に残しています。</p>
       <div id="rolloverRows"></div>
     </details>
+    <details class="observation-panel"><summary>采集进度与失败补采</summary><div id="collectionProgress"></div></details>
+    <section class="analysis-controls" aria-label="竞品筛选">
+      <label>持续趋势<select id="signalFilter"><option value="">全部</option><option value="rising">连续3天上涨（日榜）</option><option value="top10">保存期内首次进入前10（日榜）</option></select></label>
+      <label>收藏分组<select id="noteGroupFilter"><option value="">全部收藏分组</option></select></label>
+      <label>相似款标签<input id="tagFilter" placeholder="无钢圈 / 厚杯 / 套装"></label>
+      <label>最低API价格<input id="priceMin" type="number" min="0" placeholder="日元"></label>
+      <label>最高API价格<input id="priceMax" type="number" min="0" placeholder="日元"></label>
+    </section>
+    <section id="analysisPanel" class="analysis-panel">
+      <p class="eyebrow">COMPETITOR ANALYSIS</p><h2>竞品分析与每日摘要</h2><p id="analysisBasis"></p>
+      <details open><summary>每日变化摘要</summary><div id="dailyDigest"></div></details>
+      <details><summary>收藏商品变化汇总</summary><div id="watchDigest"></div></details>
+      <details><summary>竞品店铺总览</summary><div id="shopOverview"></div></details>
+      <details><summary>价格区间分析</summary><div id="priceBands"></div></details>
+      <details><summary>评论增长与评分变化</summary><div id="reviewGrowth"></div></details>
+      <details><summary>商品标题修改记录</summary><div id="titleUpdates"></div></details>
+      <details><summary>多商品日榜趋势对比</summary><p>按住Ctrl选择2～5款同类目商品。缺测会断线，浅黄色区域是你登记的活动日期。</p><select id="compareProducts" multiple size="6" aria-label="选择对比商品"></select><button id="drawMultiTrend" type="button">生成对比图</button><div id="multiTrend"></div></details>
+      <details><summary>已确认活动日历</summary><div class="analysis-controls">
+        <label>活动名称<input id="eventTitle" maxlength="120"></label><label>开始日期（JST）<input id="eventStart" type="date"></label><label>结束日期（JST）<input id="eventEnd" type="date"></label><label>确认来源链接<input id="eventSource" type="url" placeholder="https://"></label><button id="addCalendarEvent" type="button">保存活动</button>
+      </div><p>仅填写已确认的活动，系统不会推测活动日期。记录保存在此浏览器。</p><div id="calendarRows"></div><p id="calendarStatus" role="status"></p></details>
+      <details><summary>长期日榜归档</summary><p>近30天自动载入；超过30天的日榜长期保存，按需载入。更早已删除的记录不会自动恢复。</p><div class="analysis-controls"><label>开始<input id="archiveStart" type="date"></label><label>结束<input id="archiveEnd" type="date"></label><button id="loadArchive" type="button">载入归档日期</button><button id="exportArchive" type="button">导出已载入历史JSON</button></div><p id="archiveStatus" role="status"></p></details>
+      <details><summary>分析笔记备份与导入</summary><p>备份包含收藏分组、备注、相似款标签、活动日历和商品页积分核对记录。收藏星标继续使用原来的收藏JSON。</p><button id="exportAnalysis" type="button">导出分析笔记</button><label>导入合并<input id="importAnalysis" type="file" accept=".json,application/json"></label><p id="analysisTransferStatus" role="status"></p></details>
+      <p id="autoRefreshStatus" role="status">每2分钟检查已发布的日榜；发现新数据后自动加载，保留筛选条件和正在查看的历史日。</p>
+    </section>
     <section id="keywordPanel" class="keyword-panel" aria-labelledby="keywordTitle">
       <div class="keyword-heading">
         <div>

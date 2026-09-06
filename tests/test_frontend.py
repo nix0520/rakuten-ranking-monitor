@@ -11,4 +11,4 @@ ROOT = Path(__file__).resolve().parents[1]
 class FrontendTests(unittest.TestCase):
     def test_frontend_logic_and_syntax(self):
         subprocess.run(["node", "--input-type=module", "--check"], input=(ROOT / "assets/app.js").read_text(), text=True, cwd=ROOT, check=True)
-        subprocess.run(["node", "--test", "tests/test_insights.mjs", "tests/test_app.mjs", "tests/test_history_tools.mjs"], cwd=ROOT, check=True)
+        subprocess.run(["node", "--test", "tests/test_insights.mjs", "tests/test_app.mjs", "tests/test_history_tools.mjs", "tests/test_analysis.mjs"], cwd=ROOT, check=True)

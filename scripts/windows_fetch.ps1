@@ -66,7 +66,8 @@ if (-not $SkipPull) {
     Invoke-CheckedCommand git.exe pull --rebase origin main
 }
 
-Invoke-CheckedCommand py.exe -3 scripts\fetch_rankings.py --mode $Mode
+& py.exe -3 scripts\fetch_rankings.py --mode $Mode
+$fetchExitCode = $LASTEXITCODE
 
 $changes = (& git.exe status --porcelain -- data) -join ""
 if ($LASTEXITCODE -ne 0) {
@@ -74,6 +75,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 if ([string]::IsNullOrWhiteSpace($changes)) {
     Write-Host "No ranking data changed. Nothing to publish."
+    if ($fetchExitCode -ne 0) { throw "Ranking fetch failed. See local task output." }
     return
 }
 
@@ -100,6 +102,9 @@ if (-not $published) {
 }
 
 Write-Host "Rakuten $Mode data was fetched and pushed successfully."
+if ($fetchExitCode -ne 0) {
+    throw "Ranking fetch failed; diagnostic data was published for the next retry."
+}
 }
 finally {
     if ($mutexAcquired) {

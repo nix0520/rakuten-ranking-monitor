@@ -1,5 +1,6 @@
 import { WATCH_KEY, jstDay, dailySeries, couponPeriods, filterAndSort, readWatchlist, rolloverWindow } from "./insights.mjs";
 import { archiveSnapshots, referenceProducts, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist as watchlistJson } from "./history-tools.mjs";
+import { createAnalysis } from "./analysis-ui.mjs";
 
 const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "" };
 try { state.watchlist = readWatchlist(window.localStorage); } catch { /* Storage can be disabled. */ }
@@ -7,6 +8,7 @@ const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 const trendDate = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit" });
+const analysis = createAnalysis({ state, $, escapeHtml, refreshView, formatStamp, sparkline });
 
 const KEYWORD_PHRASES = [
   "ノンワイヤー", "ナイトブラ", "脇高", "補正下着", "スポーツブラ", "ブラトップ",
@@ -149,7 +151,7 @@ function filteredRows() {
   .filter(({ itemName, itemCode, shopName, catchcopy, promotionHints }) =>
     !query || `${itemName} ${itemCode} ${shopName} ${catchcopy || ""} ${(promotionHints || []).join(" ")}`.toLocaleLowerCase("ja").includes(query)
   );
-  return filterAndSort(rows, state.movement, state.watchedOnly, state.watchlist);
+  return filterAndSort(rows, state.movement, state.watchedOnly, state.watchlist).filter(analysis.matches);
 }
 
 function visibleRows(rows) {
@@ -192,7 +194,7 @@ function rowTemplate(row) {
     <td><div class="rank"><span class="rank-number">${row.rank ?? "—"}</span>${movement(row)}</div>${row.comparisonDate ? `<small class="meta">${row.comparisonDate}：${row.previousRank ?? "不在 / 未取得"}${row.previousRank != null ? "位" : ""}</small>` : ""}</td>
     <td><div class="product">${image}<div>${title}<div class="meta">${escapeHtml(row.itemCode)}</div><span class="genre-chip">${escapeHtml(row.category.name)}</span>${row.metadataBasis === "reference" ? '<small class="meta provenance">名称・画像・店舗は別時点の参考情報</small>' : row.metadataBasis === "missing" ? '<small class="meta provenance">当時の商品資料は未記録</small>' : ""}</div></div></td>
     <td>${shop}</td>
-    <td class="price">${Number.isFinite(row.itemPrice) ? yen.format(row.itemPrice) : "未記録"}${Number.isFinite(row.pointRate) ? `<span class="promo">ポイント${row.pointRate}倍</span>` : '<span class="meta">ポイント未記録</span>'}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}${couponObservation(row)}${priceMovement(row)}</td>
+    <td class="price">${Number.isFinite(row.itemPrice) ? yen.format(row.itemPrice) : "未記録"}${Number.isFinite(row.pointRate) ? `<span class="promo">APIポイント${row.pointRate}倍</span>` : '<span class="meta">ポイント未記録</span>'}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}${analysis.priceEvidence(row)}${couponObservation(row)}${priceMovement(row)}</td>
     <td><span class="rating">${Number.isFinite(row.reviewAverage) ? `★ ${row.reviewAverage.toFixed(2)}` : "未記録"}</span><span class="review-count">${Number.isFinite(row.reviewCount) ? `${row.reviewCount.toLocaleString("ja-JP")}件` : ""}</span></td>
     <td>${state.mode === "realtime" ? '<span class="spark-empty">前回取得比を順位横に表示</span>' : sparkline(trendPoints(row.category.id, row.itemCode))}
       <div class="row-actions"><button type="button" data-watch="${escapeHtml(row.itemCode)}" aria-pressed="${state.watchlist.has(row.itemCode)}">${state.watchlist.has(row.itemCode) ? "★ 保存済み" : "☆ お気に入り"}</button><button type="button" data-detail-code="${escapeHtml(row.itemCode)}" data-detail-genre="${row.category.id}">履歴詳細</button></div>
@@ -230,7 +232,7 @@ async function refreshView() {
       $("#historyNote").textContent = "選択日の商品資料を読み込み中…";
       $("#historyDate").disabled = true; $("#compareDate").disabled = true;
       try {
-        if (!/^history-products\/\d{4}-\d{2}-\d{2}\.json$/.test(target.productsFile)) throw Error('invalid snapshot path');
+        if (!/^(history-products|archive\/products)\/\d{4}-\d{2}-\d{2}\.json$/.test(target.productsFile)) throw Error('invalid snapshot path');
         if (!productSnapshots.has(target.productsFile)) {
           const response = await fetch(`data/${target.productsFile}`, { cache: "no-store" });
           if (!response.ok) throw Error('missing product snapshot');
@@ -337,6 +339,7 @@ function render() {
   $("#watchManager").innerHTML = [...state.watchlist].map(code => `<div>${escapeHtml(code)} <button type="button" data-remove-watch="${escapeHtml(code)}">削除</button></div>`).join("") || "保存した商品はありません。";
   $("#rolloverPanel").hidden = state.mode !== "daily";
   renderRollover();
+  analysis.render();
 }
 
 function formatStamp(value) {
@@ -408,6 +411,8 @@ async function openDetail(row) {
     ${couponHistory}
     <div class="history-scroll"><table class="history-grid"><thead><tr><th>日付 / 基準</th><th>順位</th><th>前回日榜比</th><th>価格</th><th>ポイント</th><th>販促の手掛かり</th></tr></thead><tbody>${points.map(p => `<tr><td>${p.day}<small>${p.dateBasis === "aggregate" ? "集計日" : "取得日・集計日不明"}</small></td><td>${p.rank ?? "圏外 / 未取得"}</td><td>${dailyChangeLabel(p)}</td><td>${p.itemPrice === null ? "未記録" : yen.format(p.itemPrice)}</td><td>${p.pointRate === null ? "未記録" : `${p.pointRate}倍`}</td><td>${p.promotionHints === null ? "未記録" : escapeHtml(p.promotionHints.join(" · ") || "文言なし")}</td></tr>`).join("")}</tbody></table></div>
     <p>価格はAPIの商品価格です。券適用後の支払額や店舗共通ポイントを網羅しません。順位と販促の同時変化は因果関係を証明するものではありません。</p>`;
+    $("#detailBody").innerHTML += analysis.extras(row);
+    analysis.bindDetail();
     $("#productDialog").showModal();
     return;
   }
@@ -523,6 +528,7 @@ async function loadHistory(index) {
 }
 
 function bindEvents() {
+  analysis.bind(openDetail);
   $("#historyDate").addEventListener("change", event => { state.selectedDay = event.target.value; refreshView(); });
   $("#compareDate").addEventListener("change", event => { state.compareDay = event.target.value; refreshView(); });
   $("#rankScope").addEventListener("change", event => { state.rankScope = event.target.value; render(); });
@@ -589,6 +595,38 @@ function bindEvents() {
   $("#csvButton").addEventListener("click", exportCsv);
 }
 
+let publicationCheckRunning = false;
+async function checkPublication() {
+  if (publicationCheckRunning || document.hidden) return;
+  publicationCheckRunning = true;
+  try {
+    const statusResponse = await fetch("data/collection-status.json", {cache:"no-store"});
+    if (statusResponse.ok) {
+      state.collectionStatus = await statusResponse.json();
+      analysis.render();
+    }
+    const manifestResponse = await fetch("data/publication.json", {cache:"no-store"});
+    if (!manifestResponse.ok) return;
+    const manifest = await manifestResponse.json();
+    if (!manifest.generatedAt || manifest.generatedAt === state.dailyLatest?.generatedAt) return;
+    if (Date.parse(manifest.generatedAt) <= Date.parse(state.dailyLatest?.generatedAt)) return;
+    const responses = await Promise.all(["data/latest.json","data/history.json","data/daily-update-log.json"].map(path=>fetch(path,{cache:"no-store"})));
+    if (responses.some(r=>!r.ok)) throw Error("新しい日榜のファイルを読み込めません");
+    const [latest,index,log] = await Promise.all(responses.map(r=>r.json()));
+    if (latest.generatedAt !== manifest.generatedAt || latest.aggregateDate !== manifest.aggregateDate) throw Error("公開ファイルの同期待ち");
+    const history = await loadHistory(index);
+    if (history.failures.length) throw Error("一部の履歴が未読込");
+    const oldArchives = (state.history?.captures || []).filter(c=>c.productsFile?.startsWith("archive/"));
+    history.captures = [...oldArchives,...history.captures];
+    state.dailyLatest = latest; state.history = history; state.updateLog = log;
+    productSnapshots.clear();
+    await refreshView();
+    $("#autoRefreshStatus").textContent = latest.aggregateDate + " の完全日榜を自動読込しました（" + formatStamp(latest.generatedAt) + "）。選択中の履歴日・絞り込み条件は保持しています。";
+  } catch {
+    $("#autoRefreshStatus").textContent = "新しい保存データの読込を次回再試行します。表示中のデータは保持しています。";
+  } finally { publicationCheckRunning = false; }
+}
+
 async function init() {
   try {
     const [latestResponse, historyResponse, updateResponse, realtimeResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" }), fetch("data/daily-update-log.json", { cache: "no-store" }), fetch("data/realtime/latest.json", { cache: "no-store" })]);
@@ -604,6 +642,8 @@ async function init() {
       $("#errorBox").textContent = "初回データ取得前です。GitHub Actionsを手動実行するとランキングが表示されます。";
     }
     bindEvents(); await refreshView();
+    checkPublication();
+    setInterval(checkPublication, 120000);
     setInterval(renderHealth, 60000);
   } catch (error) {
     $("#errorBox").hidden = false;

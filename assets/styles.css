@@ -219,3 +219,29 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 .history-grid tr { display: table-row; padding: 0; box-shadow: none; }
 .history-grid th, .history-grid td { display: table-cell; padding: 10px; width: auto; border-bottom: 1px solid var(--line); font-size: 12px; }
 .history-grid td small { display: block; color: var(--muted); }
+/* Analysis panels share the ranking page typography and remain usable on small screens. */
+.analysis-panel,.analysis-controls{background:#fff;border:1px solid #e5e0dc;border-radius:16px;padding:20px;margin:16px 0}
+.analysis-panel h2{font-size:20px;margin:6px 0 12px}
+.analysis-panel details{border-top:1px solid #eee5df;padding:14px 0}
+.analysis-panel summary{cursor:pointer;font-weight:700}
+.analysis-panel p,.analysis-detail p{font-size:13px;color:#596673;line-height:1.8}
+.analysis-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.analysis-controls label,.analysis-detail label{display:flex;flex-direction:column;gap:6px;font-size:13px;flex:1;min-width:140px}
+.analysis-controls input,.analysis-controls select,.analysis-detail input,.analysis-detail textarea,#compareProducts{border:1px solid #d9d2cc;border-radius:7px;padding:9px;font:inherit;background:white;color:#14212b;max-width:100%;min-width:0}
+.analysis-detail textarea{width:100%;min-height:85px}
+.analysis-panel button,.analysis-controls button,.analysis-detail button,#collectionProgress button{padding:8px 12px;border:1px solid #d8d0ca;border-radius:7px;background:#fff;color:#17232e;cursor:pointer}
+.analysis-panel button:hover,.analysis-detail button:hover{border-color:#c90000;color:#b60000}
+.analysis-scroll{max-height:420px;overflow:auto;margin:12px 0}
+.analysis-table{display:table;width:100%;border-collapse:collapse;font-size:12px;table-layout:auto}
+.analysis-table thead{display:table-header-group}
+.analysis-table tbody{display:table-row-group}
+.analysis-table tr{display:table-row;padding:0;box-shadow:none;background:transparent}
+.analysis-table th,.analysis-table td{display:table-cell;width:auto}
+.analysis-table th,.analysis-table td{padding:10px;text-align:left;border-bottom:1px solid #eee5df;vertical-align:top;white-space:normal;min-width:70px;max-width:350px;overflow-wrap:anywhere}
+.analysis-table th{position:sticky;top:0;background:#faf7f3;z-index:1}
+.analysis-table small{display:block;color:#657786;margin-top:5px}
+#compareProducts{width:100%;margin:10px 0}
+#multiTrend svg{width:100%;max-height:350px;margin-top:15px;background:#fff}
+.analysis-detail{margin-top:24px;border-top:1px solid #ddd;padding-top:12px}
+#collectionProgress{padding:10px 0;font-size:13px}
+@media(max-width:650px){.analysis-panel,.analysis-controls{padding:12px}.analysis-controls label{min-width:110px}.analysis-table th,.analysis-table td{padding:7px}}
