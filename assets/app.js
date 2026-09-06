@@ -327,9 +327,9 @@ function render() {
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(new Date());
   const updateDay = (state.updateLog?.days || []).find((day) => day.date === today);
   const detected = updateDay ? rolloverWindow(updateDay).first?.capturedAt : null;
-  $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜首次切替";
+  $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜検出時刻";
   $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (detected ? dateTime.format(new Date(detected)) : "判定待ち");
-  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "15:00から毎時観測（公開後スキップ）");
+  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "15:00完全取得・未完了時は16:00から毎時確認");
   const selected = selectedCategories();
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${state.group === "bra" ? "Bra" : "ショーツ"}グループ · ${selected.length}ジャンル`;
   $("#comparisonNote").textContent = state.mode === "daily" ? `日榜：${state.viewSnapshot?.day || "最新"} vs ${state.baselineSnapshot?.day || "過去日未記録"}。価格・ポイントも同じ2日の取得時点を比較。通常上位100位、全保存順位も選択可。` : `リアルタイム：前回の成功した取得との比較（通常20分間隔）。前回：${formatStamp(state.realtimeLatest?.previousCapturedAt)}。`;
@@ -343,21 +343,31 @@ function formatStamp(value) {
   return value && Number.isFinite(Date.parse(value)) ? `${dateTime.format(new Date(value))} JST` : "未記録";
 }
 
-let renderedUpdateLog;
+let renderedUpdateLog, renderedUpdateHistory, renderedUpdateLatest;
 function renderRollover() {
-  if (renderedUpdateLog === state.updateLog) return;
+  if (renderedUpdateLog === state.updateLog && renderedUpdateHistory === state.history && renderedUpdateLatest === state.dailyLatest) return;
   renderedUpdateLog = state.updateLog;
+  renderedUpdateHistory = state.history;
+  renderedUpdateLatest = state.dailyLatest;
+  const captures = [...(state.history?.captures || [])];
+  if (state.dailyLatest?.aggregateDate && state.dailyLatest?.generatedAt) {
+    captures.push({ aggregateDate: state.dailyLatest.aggregateDate, capturedAt: state.dailyLatest.generatedAt });
+  }
   const days = [...(state.updateLog?.days || [])].sort((a, b) => b.date.localeCompare(a.date));
   $("#rolloverRows").innerHTML = days.length ? days.map(day => {
     const { first, old, observations, last } = rolloverWindow(day);
-    const result = first ? (old ? `${formatStamp(old.capturedAt)} ～ ${formatStamp(first.capturedAt)}` : `初回検出 ${formatStamp(first.capturedAt)}（直前の旧榜なし・区間不明）`) : "新日榜は未検出";
+    const saved = captures.filter(c => c.aggregateDate === day.date && Number.isFinite(Date.parse(c.capturedAt)))
+      .sort((a, b) => Date.parse(b.capturedAt) - Date.parse(a.capturedAt))[0];
+    const result = first ? `${formatStamp(first.capturedAt)} 当日の日榜を検出済み / 已检测到当日日榜` : "当日の日榜は未検出";
+    const interval = old && first ? `<p>観測した切替区間：${escapeHtml(formatStamp(old.capturedAt))} ～ ${escapeHtml(formatStamp(first.capturedAt))}</p>` : "";
+    const complete = saved ? `完全日榜取得：${formatStamp(saved.capturedAt)} / 完整采集已保存` : "完全日榜：保存未確認 / 完整采集尚未确认";
     return `<details class="observation-day"><summary>${escapeHtml(day.date)} · ${escapeHtml(result)}</summary>
-      <p>最後の旧榜：${escapeHtml(formatStamp(old?.capturedAt))} ／ 最初の新榜：${escapeHtml(formatStamp(first?.capturedAt))}</p>
+      <p>${escapeHtml(complete)}</p>
+      ${interval}
       <p>最終観測：${escapeHtml(formatStamp(last?.capturedAt))} ／ API集計日：${escapeHtml(last?.aggregateDate || "不明")} ／ ${observations.length}回</p>
-      <ul>${observations.map(o => `<li>${escapeHtml(formatStamp(o.capturedAt))} → 集計日 ${escapeHtml(o.aggregateDate || "不明")} ${o.aggregateDate === day.date ? "［新日榜］" : ""}</li>`).join("")}</ul></details>`;
+      <ul>${observations.map(o => `<li>${escapeHtml(formatStamp(o.capturedAt))} → 集計日 ${escapeHtml(o.aggregateDate || "不明")} ${o.aggregateDate === day.date ? "［当日の日榜］" : ""}</li>`).join("")}</ul></details>`;
   }).join("") : "観測記録がありません。";
 }
-
 function metricChart(points, key, title, unit, rankAxis = false) {
   const valid = points.filter(p => Number.isFinite(p[key]));
   if (!valid.length) return `<section class="metric-chart"><h3>${title}</h3><p>未記録 — 次回以降の完全日榜取得から蓄積します。</p></section>`;
