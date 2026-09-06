@@ -243,5 +243,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 #compareProducts{width:100%;margin:10px 0}
 #multiTrend svg{width:100%;max-height:350px;margin-top:15px;background:#fff}
 .analysis-detail{margin-top:24px;border-top:1px solid #ddd;padding-top:12px}
+.price .meta{white-space:normal;overflow-wrap:anywhere}
+@media(max-width:680px){#rankingBody td{min-width:0}}
 #collectionProgress{padding:10px 0;font-size:13px}
 @media(max-width:650px){.analysis-panel,.analysis-controls{padding:12px}.analysis-controls label{min-width:110px}.analysis-table th,.analysis-table td{padding:7px}}
