@@ -9,19 +9,25 @@ class ScheduleTests(unittest.TestCase):
     def read(self, relative):
         return (ROOT / relative).read_text(encoding="utf-8")
 
-    def test_full_installer_uses_nine_hourly_daily_triggers(self):
+    def test_full_installer_fetches_at_15_then_probes_hourly(self):
         script = self.read("scripts/install_windows_task.ps1")
-        self.assertIn("15..23 | ForEach-Object", script)
+        self.assertIn("16..23 | ForEach-Object", script)
+        self.assertNotIn("15..23 | ForEach-Object", script)
+        self.assertIn("$dailyTrigger = New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 15 0)", script)
+        self.assertIn('New-ScheduledTask -Action (New-RankingAction "daily") -Trigger $dailyTrigger', script)
         self.assertIn("New-ScheduledTaskTrigger -Daily", script)
-        self.assertIn('Unregister-ScheduledTask -TaskName "Rakuten Ranking Daily"', script)
-        self.assertNotIn("$dailyTask", script)
+        self.assertIn('Register-ScheduledTask -TaskName "Rakuten Ranking Daily" -InputObject $dailyTask', script)
         self.assertIn("RepetitionInterval (New-TimeSpan -Minutes 20)", script)
 
     def test_schedule_only_installer_preserves_realtime_task(self):
         script = self.read("scripts/install_daily_schedule.ps1")
-        self.assertIn("15..23 | ForEach-Object", script)
+        self.assertIn("16..23 | ForEach-Object", script)
+        self.assertNotIn("15..23 | ForEach-Object", script)
+        self.assertIn("$dailyTrigger = New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 15)", script)
+        self.assertIn('-File $quotedScript -Mode daily"', script)
+        self.assertIn('New-ScheduledTask -Action $dailyAction -Trigger $dailyTrigger', script)
         self.assertIn("Register-ScheduledTask -TaskName \"Rakuten Ranking Daily Probe\"", script)
-        self.assertIn('Unregister-ScheduledTask -TaskName "Rakuten Ranking Daily"', script)
+        self.assertIn('Register-ScheduledTask -TaskName "Rakuten Ranking Daily" -InputObject $dailyTask', script)
         self.assertNotIn("Read-Host", script)
         self.assertNotIn("Rakuten Ranking Realtime", script)
 
