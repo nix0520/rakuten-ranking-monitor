@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import * as insights from '../assets/insights.mjs';
 import * as historyTools from '../assets/history-tools.mjs';
+import { createAnalysis } from '../assets/analysis-ui.mjs';
 
 function app() {
   const elements = new Map();
@@ -17,7 +18,7 @@ function app() {
     return elements.get(selector);
   }
   const storage = { value: '[]', getItem() { return this.value; }, setItem(_, value) { this.value = value; } };
-  const context = vm.createContext({ ...insights, ...historyTools, watchlistJson: historyTools.exportWatchlist, document: { querySelector: element, querySelectorAll: () => [] },
+  const context = vm.createContext({ ...insights, ...historyTools, createAnalysis, watchlistJson: historyTools.exportWatchlist, document: { querySelector: element, querySelectorAll: () => [] },
     window: { localStorage: storage }, localStorage: storage, Intl, Date, console, URL,
     fetch: async () => ({ ok: true, json: async () => ({ events: [] }) }) });
   const source = readFileSync(new URL('../assets/app.js', import.meta.url), 'utf8')

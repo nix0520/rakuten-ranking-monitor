@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from collection_support import archive_expiring, backfill_analysis, collect_daily, promotion_evidence
 
 API_URL = "https://openapi.rakuten.co.jp/ichibaranking/api/IchibaItem/Ranking/20220601"
 
@@ -156,15 +157,15 @@ def normalize_item(item: dict[str, Any]) -> dict[str, Any]:
         "itemPrice": int(float(item.get("itemPrice") or 0)),
         "itemUrl": str(item.get("itemUrl") or ""),
         "imageUrl": image_url(item.get("mediumImageUrls")),
-        "reviewCount": int(item.get("reviewCount") or 0),
-        "reviewAverage": float(item.get("reviewAverage") or 0),
+        "reviewCount": int(item["reviewCount"]) if item.get("reviewCount") not in (None, "") else None,
+        "reviewAverage": float(item["reviewAverage"]) if item.get("reviewAverage") not in (None, "") else None,
         "shopName": str(item.get("shopName") or ""),
         "shopCode": str(item.get("shopCode") or ""),
         "shopUrl": str(item.get("shopUrl") or ""),
         "catchcopy": str(item.get("catchcopy") or ""),
         "saleStartAt": str(item.get("startTime") or ""),
         "saleEndAt": str(item.get("endTime") or ""),
-        "pointRate": int(float(item.get("pointRate") or 1)),
+        "pointRate": int(float(item["pointRate"])) if item.get("pointRate") not in (None, "") else None,
         "pointRateStartAt": str(item.get("pointRateStartTime") or ""),
         "pointRateEndAt": str(item.get("pointRateEndTime") or ""),
         "promotionHints": hints[:8],
@@ -551,7 +552,11 @@ def promotion_diff(
                 "price": now[move["itemCode"]]["itemPrice"],
                 "priceDropped": now[move["itemCode"]]["itemPrice"] < before[move["itemCode"]]["itemPrice"],
                 "pointRate": now[move["itemCode"]].get("pointRate", 1),
-                "pointIncreased": now[move["itemCode"]].get("pointRate", 1) > before[move["itemCode"]].get("pointRate", 1),
+                "pointIncreased": (
+                    isinstance(now[move["itemCode"]].get("pointRate"), (int, float))
+                    and isinstance(before[move["itemCode"]].get("pointRate"), (int, float))
+                    and now[move["itemCode"]]["pointRate"] > before[move["itemCode"]]["pointRate"]
+                ),
                 "promotionHints": now[move["itemCode"]].get("promotionHints", []),
                 "promotionChanged": now[move["itemCode"]].get("promotionHints", []) != before[move["itemCode"]].get("promotionHints", []),
             }
@@ -619,6 +624,7 @@ def update_history(
         "aggregateDate": aggregate_date,
         "rankLimit": MAX_RANK,
         "couponHistoryVersion": COUPON_HISTORY_VERSION,
+        "analysisVersion": 1,
         "products": {
             item["itemCode"]: {
                 field: item.get(field)
@@ -636,6 +642,9 @@ def update_history(
                     "itemPrice": item.get("itemPrice"),
                     "pointRate": item.get("pointRate"),
                     "promotionHints": item.get("promotionHints", []),
+                    "reviewCount": item.get("reviewCount"),
+                    "reviewAverage": item.get("reviewAverage"),
+                    "pointEvidence": item.get("pointEvidence") or promotion_evidence(item, captured_at.isoformat()),
                 }
                 for item in items if item.get("itemCode")
             }
@@ -647,7 +656,13 @@ def update_history(
         },
     }
     current_date = captured_at.astimezone(JST).date()
+    # Shared titles are stored once per product, not once per category.
+    current_capture["analysisProducts"] = {
+        code: {k: p.get(k) for k in ("itemName", "catchcopy")}
+        for code, p in current_capture["products"].items()
+    }
     cutoff_date = current_date - timedelta(days=HISTORY_DAYS - 1)
+    archive_expiring(output_dir, cutoff_date.isoformat(), load_json, write_json)
     by_date: dict[str, dict[str, Any]] = {}
     for existing in [*captures, current_capture]:
         day = capture_aggregate_date(existing)
@@ -792,10 +807,33 @@ def current_daily_is_complete(output_dir: Path, today: str,
 
 
 def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> None:
+    try:
+        _run(args, expected_daily_date)
+    except Exception as error:
+        if args.mode == "daily":
+            path = Path(args.output_dir) / "collection-status.json"
+            status = load_json(path, {})
+            if status.get("status") in ("running", "validated"):
+                now = datetime.now(JST)
+                retry = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+                if retry.date() != now.date():
+                    retry = retry.replace(hour=15)
+                elif retry.hour < 15:
+                    retry = retry.replace(hour=15)
+                status.update(status="retry_pending", reason="collection_or_save_failed",
+                              errorType=type(error).__name__, updatedAt=now.isoformat(),
+                              nextRetryAt=retry.isoformat())
+                write_json(path, status)
+        raise
+
+
+def _run(args: argparse.Namespace, expected_daily_date: str | None = None) -> None:
     categories = load_json(Path(args.categories), [])
     validate_categories(categories)
     output_dir = Path(args.output_dir)
     mode = args.mode
+    if mode != "realtime":
+        backfill_analysis(output_dir, load_json, write_json)
 
     if mode == "daily-probe":
         upgraded = backfill_coupon_history(output_dir)
@@ -818,7 +856,27 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
 
     rankings: dict[str, list[dict[str, Any]]] = {}
     source_build_at = None
-    for index, category in enumerate(categories, start=1):
+    full_status = None
+    resumable = mode == "daily" and (not args.fixture or expected_daily_date)
+    if resumable:
+        day = expected_daily_date or datetime.now(JST).date().isoformat()
+        def fetch_one(category):
+            return fetch_category(
+                category, application_id, access_key, request_fn,
+                sleep_fn=(lambda _seconds: None) if args.fixture else time.sleep,
+                max_rank=MAX_RANK, expected_date=day,
+            )
+        rankings, source_build_at, failed, full_status = collect_daily(
+            categories, output_dir, day, DAILY_COLLECTION_VERSION, fetch_one,
+            source_date, load_json, write_json, lambda: datetime.now(JST),
+            daily_minimum_counts(output_dir, day),
+        )
+        if failed:
+            if expected_daily_date:
+                raise DailyCompletenessError(failed)
+            print("Daily collection is incomplete; healthy genres are checkpointed for the next retry.")
+            return
+    for index, category in enumerate([] if resumable else categories, start=1):
         print(
             f"[{index:02d}/{len(categories):02d}] Fetching {category['id']} {category['name']} ({mode})",
             flush=True,
@@ -915,6 +973,15 @@ def run(args: argparse.Namespace, expected_daily_date: str | None = None) -> Non
     )
     # Publish last: the latest snapshot also serves as the successful-fetch marker.
     write_json(latest_path, latest)
+    write_json(output_dir / "publication.json", {
+        "generatedAt": latest["generatedAt"], "aggregateDate": aggregate_date,
+        "collectionVersion": DAILY_COLLECTION_VERSION,
+    })
+    if full_status:
+        full_status.update(status="complete", finishedAt=datetime.now(JST).isoformat(), nextRetryAt=None)
+        write_json(output_dir / "collection-status.json", full_status)
+        cache = output_dir.parent / ".ranking-cache" / (output_dir.name + "-daily.json")
+        cache.unlink(missing_ok=True)
     print(f"Saved {sum(map(len, rankings.values()))} ranking rows at {captured_at.isoformat()}")
 
 
