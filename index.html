@@ -34,7 +34,7 @@
       <article><span>表示商品</span><strong id="itemCount">—</strong></article>
       <article><span>新規ランクイン</span><strong id="newCount">—</strong></article>
       <article><span id="captureLabel">データ期間</span><strong id="captureCount">—</strong></article>
-      <article><span id="switchLabel">日榜首次切替</span><strong id="dailySwitch">—</strong><small id="dailySwitchDetail">—</small></article>
+      <article><span id="switchLabel">日榜検出時刻</span><strong id="dailySwitch">—</strong><small id="dailySwitchDetail">—</small></article>
     </section>
 
     <section class="control-panel" aria-label="絞り込み">
@@ -83,8 +83,8 @@
       </details>
     </section>
     <details id="rolloverPanel" class="observation-panel">
-      <summary>日榜の切替記録 · 日本時間（JST）</summary>
-      <p>最後の旧日榜と最初の新日榜の間が観測上の切替区間です。初回検出時刻＝実際の更新時刻ではありません。</p>
+      <summary>日榜の更新・取得記録 · 日本時間（JST）</summary>
+      <p>毎日15:00に完全取得。検出時刻と完全日榜の取得時刻を分けて表示します。過去に観測した切替区間は詳細に残しています。</p>
       <div id="rolloverRows"></div>
     </details>
     <section id="keywordPanel" class="keyword-panel" aria-labelledby="keywordTitle">
@@ -126,7 +126,7 @@
     <div id="detailBody"></div>
   </dialog>
 
-  <footer>Data provided by Rakuten Web Service · すべて日本時間（JST）· 日榜は毎日15:00から1時間ごとに切替確認（公開完了後は当日分をスキップ）、検出後に自動完全取得・公開 · リアルタイム毎時05分・25分・45分（20分間隔）</footer>
+  <footer>Data provided by Rakuten Web Service · すべて日本時間（JST）· 日榜は毎日15:00に直接完全取得。未完了時は16:00～23:00の毎正時に確認し、当日榜を検出後に完全取得・公開（完了後はスキップ） · リアルタイム毎時05分・25分・45分（20分間隔）</footer>
   <script type="module" src="assets/app.js"></script>
 </body>
 </html>

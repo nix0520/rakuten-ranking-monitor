@@ -47,8 +47,9 @@ function New-RankingAction {
 }
 
 $probeTriggers = @(
-    15..23 | ForEach-Object { New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal $_ 0) }
+    16..23 | ForEach-Object { New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal $_ 0) }
 )
+$dailyTrigger = New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 15 0)
 $realtimeStart = Convert-JstTimeToLocal 0 5
 $realtimeTrigger = New-ScheduledTaskTrigger -Once -At $realtimeStart `
     -RepetitionInterval (New-TimeSpan -Minutes 20) `
@@ -58,19 +59,20 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
 
-$probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Probe hourly from 15:00 through 23:00 JST until today's complete daily ranking is published."
+$dailyTask = New-ScheduledTask -Action (New-RankingAction "daily") -Trigger $dailyTrigger -Settings $settings -Principal $principal -Description "Fetch complete daily rankings directly at 15:00 JST."
+$probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Probe hourly from 16:00 through 23:00 JST until today's complete daily ranking is published."
 $realtimeTask = New-ScheduledTask -Action (New-RankingAction "realtime") -Trigger $realtimeTrigger -Settings $settings -Principal $principal -Description "Fetch all 17 realtime rankings every 20 minutes."
 
 Unregister-ScheduledTask -TaskName "Rakuten Ranking Monitor" -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName "Rakuten Ranking Daily Probe" -InputObject $probeTask -Force | Out-Null
-Unregister-ScheduledTask -TaskName "Rakuten Ranking Daily" -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask -TaskName "Rakuten Ranking Daily" -InputObject $dailyTask -Force | Out-Null
 Unregister-ScheduledTask -TaskName "Rakuten Ranking Hourly Probe Today" -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName "Rakuten Ranking Hourly Probe 3 Days" -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName "Rakuten Ranking Realtime" -InputObject $realtimeTask -Force | Out-Null
 
 Write-Host "Scheduled task installed successfully."
-Write-Host "JST daily: probe at 15:00, then hourly through 23:00 until fully published"
-Write-Host "Full daily fetch: starts automatically when a probe detects today's aggregate date"
+Write-Host "JST full daily fetch: 15:00 directly (no preliminary probe)"
+Write-Host "JST fallback probes: 16:00 through 23:00 hourly; skip after today is complete"
 Write-Host "JST realtime 17-genre rankings: every 20 minutes at :05, :25, :45"
 Write-Host "Running a lightweight daily probe now..."
 

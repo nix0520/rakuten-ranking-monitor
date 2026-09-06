@@ -27,6 +27,30 @@ function app() {
   return { context, element, storage, run: code => vm.runInContext(code, context) };
 }
 
+test('daily log separates detection from saved collection and preserves observed intervals', () => {
+  const a = app();
+  a.run(`state.updateLog = {days:[
+    {date:'2026-09-06', observations:[{capturedAt:'2026-09-06T15:00:00+09:00',aggregateDate:'2026-09-06'}]},
+    {date:'2026-09-03', observations:[
+      {capturedAt:'2026-09-03T14:00:00+09:00',aggregateDate:'2026-09-02'},
+      {capturedAt:'2026-09-03T15:00:00+09:00',aggregateDate:'2026-09-03'}]}
+  ]}; renderRollover()`);
+  let html = a.element('#rolloverRows').innerHTML;
+  assert.match(html, /已检测到当日日榜/);
+  assert.doesNotMatch(html, /区間不明|旧榜なし|完整采集已保存/);
+  assert.match(html, /完整采集尚未确认/);
+  assert.match(html, /観測した切替区間：09\/03 14:00 JST ～ 09\/03 15:00 JST/);
+  a.run(`state.history = {captures:[
+    {aggregateDate:'2026-09-05',capturedAt:'2026-09-06T15:01:00+09:00'},
+    {aggregateDate:'2026-09-06',capturedAt:'2026-09-06T15:06:00+09:00'}
+  ]}; renderRollover()`);
+  html = a.element('#rolloverRows').innerHTML;
+  assert.match(html, /完全日榜取得：09\/06 15:06 JST/);
+  assert.doesNotMatch(html, /完全日榜取得：09\/06 15:01 JST/);
+  a.run(`state.dailyLatest = {aggregateDate:'2026-09-06',generatedAt:'2026-09-06T16:08:00+09:00'}; renderRollover()`);
+  assert.match(a.element('#rolloverRows').innerHTML, /完全日榜取得：09\/06 16:08 JST/);
+});
+
 test('page templates escape titles and render favorite and history buttons', () => {
   const a = app();
   a.run('render()');
