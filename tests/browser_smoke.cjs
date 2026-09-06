@@ -77,7 +77,11 @@ const server=http.createServer((req,res)=>{
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:'/tmp/ranking-analysis-mobile.png',fullPage:true});
     const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,
-      boxes:[...document.querySelectorAll('main > *, .summary > *, #analysisPanel > *, .control-panel > *, .history-controls > *')].map(e=>({tag:e.tagName,id:e.id,cls:e.className,left:e.getBoundingClientRect().left,right:e.getBoundingClientRect().right,scroll:e.scrollWidth})).filter(e=>e.right>innerWidth+1)}));
+      boxes:[...document.querySelectorAll('body *')].filter(e=>{
+        if(e.getBoundingClientRect().right<=innerWidth+1)return false;
+        let p=e.parentElement;
+        while(p && p!==document.body){if(['auto','scroll','hidden','clip'].includes(getComputedStyle(p).overflowX))return false;p=p.parentElement;}return true;
+      }).slice(0,25).map(e=>({tag:e.tagName,id:e.id,cls:e.className,left:e.getBoundingClientRect().left,right:e.getBoundingClientRect().right,scroll:e.scrollWidth}))}));
     if(overflow.scroll>overflow.width+1)console.log('Mobile overflow diagnostics:',JSON.stringify(overflow));
     assert.equal(overflow.scroll>overflow.width+1,false,'no page overflow on mobile');
     assert.deepEqual(errors,[]);
