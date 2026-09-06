@@ -76,7 +76,10 @@ const server=http.createServer((req,res)=>{
     await page.screenshot({path:'/tmp/ranking-analysis-desktop.png',fullPage:true});
     await page.setViewportSize({width:390,height:844});
     await page.screenshot({path:'/tmp/ranking-analysis-mobile.png',fullPage:true});
-    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,'no page overflow on mobile');
+    const overflow=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,
+      boxes:[...document.querySelectorAll('main > *, .summary > *, #analysisPanel > *, .control-panel > *, .history-controls > *')].map(e=>({tag:e.tagName,id:e.id,cls:e.className,left:e.getBoundingClientRect().left,right:e.getBoundingClientRect().right,scroll:e.scrollWidth})).filter(e=>e.right>innerWidth+1)}));
+    if(overflow.scroll>overflow.width+1)console.log('Mobile overflow diagnostics:',JSON.stringify(overflow));
+    assert.equal(overflow.scroll>overflow.width+1,false,'no page overflow on mobile');
     assert.deepEqual(errors,[]);
     console.log('Browser smoke passed: detail, notes, filters, activity, chart, archive, refresh, mobile.');
   }finally{await browser.close();server.close();}
