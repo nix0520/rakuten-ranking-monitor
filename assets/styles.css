@@ -243,7 +243,11 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 .analysis-product{display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;align-items:center;min-width:250px}
 .analysis-product img,.analysis-image-empty{width:54px;height:54px;border-radius:7px;object-fit:cover;background:#f3efeb}
 .analysis-image-empty{display:grid;place-items:center;color:#8b8178;font-size:9px;text-align:center}
-.analysis-product button{display:block;width:100%;text-align:left;overflow-wrap:anywhere}
+.analysis-product-image-link{display:block;width:54px;height:54px}
+.analysis-product-title{display:block;color:#17202a;font-weight:700;line-height:1.5;text-decoration:none;overflow-wrap:anywhere}
+a.analysis-product-title:hover{text-decoration:underline;color:#bf0000}
+.analysis-detail-button{display:inline-block!important;width:auto!important;margin-top:6px;padding:4px 8px!important;font-size:11px}
+.analysis-link-missing{color:#a16b33!important}
 .analysis-product small{overflow-wrap:anywhere}
 #compareProducts{width:100%;margin:10px 0}
 #multiTrend svg{width:100%;max-height:350px;margin-top:15px;background:#fff}
