@@ -22,10 +22,15 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     catch { return ''; }
   };
   const rowLink = r => {
-    const image=safeImage(r.imageUrl);
-    return '<div class="analysis-product">'+(image?'<img src="'+image+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span class="analysis-image-empty" aria-hidden="true">画像なし</span>')+
-      '<div><button type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">'+esc(r.itemName?.slice(0,65)||r.itemCode)+'</button><small>'+
-      esc(r.category.name)+' · '+esc(r.shopName||'店铺未记录')+' · '+esc(r.itemCode)+'</small></div></div>';
+    const image=safeImage(r.imageUrl), url=safeImage(r.itemUrl);
+    const picture=image ? '<img src="'+image+'" alt="" loading="lazy" referrerpolicy="no-referrer">' : '<span class="analysis-image-empty" aria-hidden="true">画像なし</span>';
+    const title=esc(r.itemName?.slice(0,65)||r.itemCode);
+    const linkedPicture=url ? '<a class="analysis-product-image-link" href="'+url+'" target="_blank" rel="noopener noreferrer" aria-label="乐天商品页面">'+picture+'</a>' : picture;
+    const linkedTitle=url ? '<a class="analysis-product-title" href="'+url+'" target="_blank" rel="noopener noreferrer">'+title+'</a>' : '<span class="analysis-product-title">'+title+'</span>';
+    const linkStatus=url ? '' : '<small class="analysis-link-missing">商品链接未记录</small>';
+    return '<div class="analysis-product">'+linkedPicture+'<div>'+linkedTitle+'<small>'+
+      esc(r.category.name)+' · '+esc(r.shopName||'店铺未记录')+' · '+esc(r.itemCode)+'</small>'+linkStatus+
+      '<button class="analysis-detail-button" type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">历史详情</button></div></div>';
   };
   function save(next) {
     const clean=A.cleanNotebook(next);

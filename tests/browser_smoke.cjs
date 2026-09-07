@@ -45,8 +45,12 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.locator('#rankingBody tr').count(),2);
     assert.equal(await page.locator('#dailyDigest .analysis-product img').count()>0,true);
     assert.equal(await page.locator('#dailyDigest').innerText().then(t=>t.includes('Test shop')),true);
+    const summaryLink=page.locator('#dailyDigest .analysis-product-title').first();
+    assert.equal(await summaryLink.getAttribute('href'),'https://item.rakuten.co.jp/test/product/');
+    assert.equal(await summaryLink.getAttribute('target'),'_blank');
+    assert.equal(await page.locator('#dailyDigest [data-analysis-detail]').first().innerText(),'历史详情');
     assert.match(await page.locator('#titleUpdates').textContent(),/长期归档/);
-    await page.locator('#rankingBody [data-detail-code]').first().click();
+    await page.locator('#dailyDigest [data-analysis-detail]').first().click();
     await page.locator('#productDialog').waitFor({state:'visible'});
     assert.match(await page.locator('#detailBody').innerText(),/促销与积分追溯/);
     await page.fill('#productGroup','直接竞品');
