@@ -9,7 +9,7 @@ const categories=JSON.parse(fs.readFileSync(path.join(root,'config/categories.js
 const day='2026-09-06',genre='110854';
 let revision=0;
 const dates=Array.from({length:31},(_,i)=>new Date(Date.parse(day+'T00:00:00Z')-(30-i)*86400000).toISOString().slice(0,10));
-const rows=n=>[1,2].map((i)=>({itemCode:'s:'+i,rank:i===1?Math.max(1,31-n):5,itemName:(n<29?'20%OFFクーポン':'30%OFFクーポン')+' P10倍 テストブラ '+i,catchcopy:'',itemPrice:3000,pointRate:1,reviewCount:100+n,reviewAverage:4.5,shopCode:'s',shopName:'Test shop',promotionHints:[n<29?'20%OFFクーポン':'30%OFFクーポン'],itemUrl:'https://item.rakuten.co.jp/test/product/',imageUrl:''}));
+const rows=n=>[1,2].map((i)=>({itemCode:'s:'+i,rank:i===1?Math.max(1,31-n):5,itemName:(n<29?'20%OFFクーポン':'30%OFFクーポン')+' P10倍 テストブラ '+i,catchcopy:'',itemPrice:3000,pointRate:1,reviewCount:100+n,reviewAverage:4.5,shopCode:'s',shopName:'Test shop',promotionHints:[n<29?'20%OFFクーポン':'30%OFFクーポン'],itemUrl:'https://item.rakuten.co.jp/test/product/',imageUrl:'https://image.rakuten.co.jp/test.jpg'}));
 const snapshots=dates.map((d,n)=>({aggregateDate:d,capturedAt:d+'T15:06:00+09:00',genres:Object.fromEntries(categories.map(c=>[c.id,Object.fromEntries(rows(n).map(r=>[r.itemCode,r.rank]))])),metrics:Object.fromEntries(categories.map(c=>[c.id,Object.fromEntries(rows(n).map(r=>[r.itemCode,{itemPrice:r.itemPrice,pointRate:r.pointRate,itemName:r.itemName,promotionText:r.itemName,reviewCount:r.reviewCount,reviewAverage:r.reviewAverage,promotionHints:r.promotionHints}]))])),products:Object.fromEntries(rows(n).map(r=>[r.itemCode,r]))}));
 const latest=()=>({aggregateDate:day,generatedAt:day+(revision?'T16:06:00+09:00':'T15:06:00+09:00'),collectionVersion:2,categories,rankings:Object.fromEntries(categories.map(c=>[c.id,rows(30)]))});
 const server=http.createServer((req,res)=>{
@@ -43,6 +43,9 @@ const server=http.createServer((req,res)=>{
     await page.locator('#rankingBody tr').first().waitFor();
     await page.selectOption('#categorySelect',genre);
     assert.equal(await page.locator('#rankingBody tr').count(),2);
+    assert.equal(await page.locator('#dailyDigest .analysis-product img').count()>0,true);
+    assert.equal(await page.locator('#dailyDigest').innerText().then(t=>t.includes('Test shop')),true);
+    assert.match(await page.locator('#titleUpdates').innerText(),/长期归档/);
     await page.locator('#rankingBody [data-detail-code]').first().click();
     await page.locator('#productDialog').waitFor({state:'visible'});
     assert.match(await page.locator('#detailBody').innerText(),/促销与积分追溯/);
@@ -55,6 +58,7 @@ const server=http.createServer((req,res)=>{
     assert.match(await page.locator('#activityResult').innerText(),/活動前日/);
     await page.click('#closeDetail');
     await page.locator('summary').filter({hasText:'多商品日榜趋势对比'}).click();
+    assert.match(await page.locator('#compareProducts option').first().innerText(),/店铺 Test shop/);
     await page.selectOption('#compareProducts',[genre+'|s:1',genre+'|s:2']);await page.click('#drawMultiTrend');
     assert.equal(await page.locator('#multiTrend svg').count(),1);
     await page.selectOption('#signalFilter','rising');

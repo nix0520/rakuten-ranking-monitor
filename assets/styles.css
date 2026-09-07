@@ -240,6 +240,11 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 .analysis-table th,.analysis-table td{padding:10px;text-align:left;border-bottom:1px solid #eee5df;vertical-align:top;white-space:normal;min-width:70px;max-width:350px;overflow-wrap:anywhere}
 .analysis-table th{position:sticky;top:0;background:#faf7f3;z-index:1}
 .analysis-table small{display:block;color:#657786;margin-top:5px}
+.analysis-product{display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;align-items:center;min-width:250px}
+.analysis-product img,.analysis-image-empty{width:54px;height:54px;border-radius:7px;object-fit:cover;background:#f3efeb}
+.analysis-image-empty{display:grid;place-items:center;color:#8b8178;font-size:9px;text-align:center}
+.analysis-product button{display:block;width:100%;text-align:left;overflow-wrap:anywhere}
+.analysis-product small{overflow-wrap:anywhere}
 #compareProducts{width:100%;margin:10px 0}
 #multiTrend svg{width:100%;max-height:350px;margin-top:15px;background:#fff}
 .analysis-detail{margin-top:24px;border-top:1px solid #ddd;padding-top:12px}
