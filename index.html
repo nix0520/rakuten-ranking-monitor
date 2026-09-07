@@ -102,8 +102,8 @@
       <details><summary>竞品店铺总览</summary><div id="shopOverview"></div></details>
       <details><summary>价格区间分析</summary><div id="priceBands"></div></details>
       <details><summary>评论增长与评分变化</summary><div id="reviewGrowth"></div></details>
-      <details><summary>商品标题修改记录</summary><div id="titleUpdates"></div></details>
-      <details><summary>多商品日榜趋势对比</summary><p>按住Ctrl选择2～5款同类目商品。缺测会断线，浅黄色区域是你登记的活动日期。</p><select id="compareProducts" multiple size="6" aria-label="选择对比商品"></select><button id="drawMultiTrend" type="button">生成对比图</button><div id="multiTrend"></div></details>
+      <details><summary>商品标题修改记录</summary><p>每天完整日榜保存商品标题，超过30天后随日榜进入长期归档。载入旧归档可继续追溯；上线前没有保存的标题无法补回。</p><div id="titleUpdates"></div></details>
+      <details><summary>多商品日榜趋势对比</summary><p>按住Ctrl选择2～5款同类目商品。选项同时显示店铺名、商品编码和商品名。缺测会断线，浅黄色区域是你登记的活动日期。</p><select id="compareProducts" multiple size="6" aria-label="选择对比商品"></select><button id="drawMultiTrend" type="button">生成对比图</button><div id="multiTrend"></div></details>
       <details><summary>已确认活动日历</summary><div class="analysis-controls">
         <label>活动名称<input id="eventTitle" maxlength="120"></label><label>开始日期（JST）<input id="eventStart" type="date"></label><label>结束日期（JST）<input id="eventEnd" type="date"></label><label>确认来源链接<input id="eventSource" type="url" placeholder="https://"></label><button id="addCalendarEvent" type="button">保存活动</button>
       </div><p>仅填写已确认的活动，系统不会推测活动日期。记录保存在此浏览器。</p><div id="calendarRows"></div><p id="calendarStatus" role="status"></p></details>

@@ -17,7 +17,16 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   const amount = value => Number.isFinite(value) ? '￥'+value.toLocaleString('ja-JP') : '未記録';
   const table = (heads, rows) => '<div class="analysis-scroll"><table class="analysis-table"><thead><tr>'+heads.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+ (rows.length ? rows.map(row=>'<tr>'+row.map(v=>'<td>'+v+'</td>').join('')+'</tr>').join('') : '<tr><td colspan="'+heads.length+'">該当する記録がありません。</td></tr>')+'</tbody></table></div>';
   const textTable = (heads, rows) => table(heads,rows.map(row=>row.map(v=>esc(v ?? '未記録'))));
-  const rowLink = r => '<button type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">'+esc(r.itemName?.slice(0,65)||r.itemCode)+'</button><small>'+esc(r.category.name)+' · '+esc(r.itemCode)+'</small>';
+  const safeImage = value => {
+    try { const url=new URL(value); return ['http:','https:'].includes(url.protocol) ? esc(url.href) : ''; }
+    catch { return ''; }
+  };
+  const rowLink = r => {
+    const image=safeImage(r.imageUrl);
+    return '<div class="analysis-product">'+(image?'<img src="'+image+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<span class="analysis-image-empty" aria-hidden="true">画像なし</span>')+
+      '<div><button type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">'+esc(r.itemName?.slice(0,65)||r.itemCode)+'</button><small>'+
+      esc(r.category.name)+' · '+esc(r.shopName||'店铺未记录')+' · '+esc(r.itemCode)+'</small></div></div>';
+  };
   function save(next) {
     const clean=A.cleanNotebook(next);
     globalThis.localStorage.setItem(A.NOTES_KEY, JSON.stringify(clean));
@@ -65,14 +74,17 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const reviewRows=[...new Map(rows.filter(r=>r.rank!=null).map(r=>[r.itemCode,r])).values()].map(r=>({r,a:A.reviewGrowth(series(r),day,7),b:A.reviewGrowth(series(r),day,30)}));
     $('#reviewGrowth').innerHTML=table(['商品','7天评论增量','30天评论增量','7天评分变化'],reviewRows.sort((a,b)=>(b.a.count??-Infinity)-(a.a.count??-Infinity)).slice(0,30).map(({r,a,b})=>[rowLink(r),esc(a.count??'未记录'),esc(b.count??'未记录'),esc(a.rating===null?'未记录':a.rating.toFixed(2))]))+'<small>仅比较准确相隔7/30日的保存数据。负数可能来自评论清理；评论增量不等于销量。30日比较需31个日期，可通过归档加载补足。</small>';
     const allChanges=rows.flatMap(r=>A.titleChanges(series(r)).map(c=>({r,c}))).sort((a,b)=>b.c.to.localeCompare(a.c.to));
-    $('#titleUpdates').innerHTML=table(['商品','观察日期','修改前','修改后'],allChanges.slice(0,30).map(({r,c})=>[rowLink(r),esc(c.from+' → '+c.to),esc(c.before),esc(c.after)]));
+    const titleDays=rows.flatMap(r=>series(r).filter(p=>p.title!=null).map(p=>p.day)).sort();
+    const titleRange=titleDays.length ? titleDays[0]+' ～ '+titleDays.at(-1) : 'まだ記録なし';
+    $('#titleUpdates').innerHTML=table(['商品','观察日期','修改前','修改后'],allChanges.slice(0,30).map(({r,c})=>[rowLink(r),esc(c.from+' → '+c.to),esc(c.before),esc(c.after)]))+
+      '<small>当前载入的标题记录范围：'+esc(titleRange)+'。完整日榜会保存当天标题；超过30天后随日榜进入长期归档。载入更早归档后，这里的范围和修改记录会一起扩展。上线前没有保存的标题无法补回。</small>';
     const groups=[...new Set(Object.values(notebook.products).map(p=>p.group).filter(Boolean))];
     $('#noteGroupFilter').innerHTML='<option value="">全部收藏分组</option>'+groups.map(g=>'<option value="'+esc(g)+'">'+esc(g)+'</option>').join('');
     $('#noteGroupFilter').value=filters.group;
     $('#calendarRows').innerHTML=table(['活动','期间（JST日期）','确认来源','操作'],notebook.events.map((e,i)=>[esc(e.title),esc(e.start+' ～ '+e.end),'<a href="'+esc(e.source)+'" target="_blank" rel="noopener noreferrer">来源</a>','<button type="button" data-delete-event="'+i+'">删除</button>']));
     const options=[...new Map(rows.filter(r=>r.rank!=null).map(r=>[r.category.id+':'+r.itemCode,r])).values()];
     const selected=[...($('#compareProducts').selectedOptions||[])].map(o=>o.value);
-    $('#compareProducts').innerHTML=options.map(r=>'<option value="'+esc(r.category.id+'|'+r.itemCode)+'"'+(selected.includes(r.category.id+'|'+r.itemCode)?' selected':'')+'>'+esc(r.category.name+' · '+r.itemCode+' · '+r.itemName?.slice(0,35))+'</option>').join('');
+    $('#compareProducts').innerHTML=options.map(r=>'<option value="'+esc(r.category.id+'|'+r.itemCode)+'"'+(selected.includes(r.category.id+'|'+r.itemCode)?' selected':'')+'>'+esc(r.category.name+' · 店铺 '+(r.shopName||'未记录')+' · '+r.itemCode+' · '+r.itemName?.slice(0,35))+'</option>').join('');
   }
   function pointSources(row, points) {
     const p=points.at(-1), ev=p?.pointEvidence;
