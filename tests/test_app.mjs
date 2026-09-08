@@ -65,6 +65,27 @@ test('page templates escape titles and render favorite and history buttons', () 
   assert.equal(a.element('#rolloverPanel').hidden, true);
 });
 
+test('shop overview headers toggle ascending and descending sorting', async () => {
+  const a = app();
+  await a.run(`state.dailyLatest = {aggregateDate:'2026-09-08',generatedAt:'2026-09-08T15:00:00+09:00',categories:[{id:1,group:'bra',name:'Bra'}],rankings:{1:[
+    {itemCode:'b:1',shopCode:'b',shopName:'Beta',rank:20,change:-2},
+    {itemCode:'a:1',shopCode:'a',shopName:'Alpha',rank:5,change:3},
+    {itemCode:'a:2',shopCode:'a',shopName:'Alpha',rank:8,change:1}
+  ]}}; bindEvents(); refreshView();`);
+  let html=a.element('#shopOverview').innerHTML;
+  assert.ok(html.indexOf('Alpha')<html.indexOf('Beta'));
+  assert.match(html,/data-shop-sort="top10">前10<span aria-hidden="true">▼/);
+  const panel=a.element('#analysisPanel');
+  panel.handlers.click({target:{closest:selector=>selector==='[data-shop-sort]'?{dataset:{shopSort:'name'}}:null}});
+  html=a.element('#shopOverview').innerHTML;
+  assert.ok(html.indexOf('Alpha')<html.indexOf('Beta'));
+  assert.match(html,/data-shop-sort="name">店铺<span aria-hidden="true">▲/);
+  panel.handlers.click({target:{closest:selector=>selector==='[data-shop-sort]'?{dataset:{shopSort:'name'}}:null}});
+  html=a.element('#shopOverview').innerHTML;
+  assert.ok(html.indexOf('Beta')<html.indexOf('Alpha'));
+  assert.match(html,/data-shop-sort="name">店铺<span aria-hidden="true">▼/);
+});
+
 test('favorite click persists, only-watched filter works, manager removes absent entries', () => {
   const a = app();
   a.run('bindEvents(); render()');

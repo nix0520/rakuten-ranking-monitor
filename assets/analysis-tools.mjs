@@ -95,6 +95,18 @@ export function shopOverview(rows) {
   return [...stores.values()].map(s=>({...s,items:s.items.size,top10:s.top10.size,top100:s.top100.size,up:s.up.size,down:s.down.size})).sort((a,b)=>b.top10-a.top10||b.items-a.items);
 }
 
+export function sortShopOverview(shops, key = 'top10', direction = 'desc') {
+  const allowed = new Set(['name','items','top10','top100','up','down']);
+  const sortKey = allowed.has(key) ? key : 'top10';
+  const sign = direction === 'asc' ? 1 : -1;
+  return [...shops].sort((a,b) => {
+    const comparison = sortKey === 'name'
+      ? String(a.name || '').localeCompare(String(b.name || ''), 'ja')
+      : (Number(a[sortKey]) || 0) - (Number(b[sortKey]) || 0);
+    return comparison * sign || String(a.name || '').localeCompare(String(b.name || ''), 'ja');
+  });
+}
+
 const bestRank = rows => Math.min(...rows.map(r=>r.rank).filter(Number.isFinite), Infinity);
 const median = values => {
   const sorted=values.filter(Number.isFinite).sort((a,b)=>a-b);

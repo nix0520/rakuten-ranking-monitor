@@ -45,6 +45,17 @@ test('shop and price summaries deduplicate products without altering original ro
   assert.equal(profile.products[0].heat.level,'高');
 });
 
+test('shop overview sorts every column without mutating the source',()=>{
+  const shops=[
+    {name:'Beta',items:3,top10:1,top100:2,up:0,down:2},
+    {name:'Alpha',items:8,top10:4,top100:7,up:5,down:1}
+  ];
+  assert.deepEqual(A.sortShopOverview(shops,'name','asc').map(s=>s.name),['Alpha','Beta']);
+  assert.deepEqual(A.sortShopOverview(shops,'items','desc').map(s=>s.name),['Alpha','Beta']);
+  assert.deepEqual(A.sortShopOverview(shops,'down','desc').map(s=>s.name),['Beta','Alpha']);
+  assert.equal(shops[0].name,'Beta');
+});
+
 test('shop roles are explicit inferences and shop comparison keeps unique products',()=>{
   const base={shopCode:'s',shopName:'Shop',category:{id:'a',name:'Bra'},itemPrice:3200,pointRate:1};
   const rows=[
