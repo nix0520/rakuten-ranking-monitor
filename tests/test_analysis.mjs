@@ -30,11 +30,32 @@ test('timeline gaps and unknown titles never fabricate changes or campaign dates
   assert.equal(A.activityComparison(series,'2026-09-03','2026-09-03')[0].observation,null);
 });
 test('shop and price summaries deduplicate products without altering original rows',()=>{
-  const rows=[{itemCode:'s:1',shopName:'Shop',rank:1,itemPrice:2500,change:2},{itemCode:'s:1',shopName:'Shop',rank:3,itemPrice:2500,change:-1}];
+  const category={id:'a',name:'Bra'};
+  const rows=[{itemCode:'s:1',shopCode:'s',shopName:'Shop',rank:1,itemPrice:2500,change:2,category,promotionHints:['20%OFFクーポン'],pointRate:5},{itemCode:'s:1',shopCode:'s',shopName:'Shop',rank:3,itemPrice:2500,change:-1,category:{id:'b',name:'Inner'},promotionHints:['20%OFFクーポン'],pointRate:5}];
   assert.equal(A.shopOverview(rows)[0].items,1);
   assert.equal(A.shopOverview(rows)[0].down,1);
   assert.equal(A.priceBands(rows)[1].count,1);
   assert.equal(rows.length,2);
+  const profile=A.shopProfile(rows,'s',()=>[{day:'2026-09-07',reviews:10},{day:'2026-09-08',reviews:12}]);
+  assert.equal(profile.itemCount,1);
+  assert.equal(profile.categoryCount,2);
+  assert.equal(profile.top10,1);
+  assert.equal(profile.medianPrice,2500);
+  assert.equal(profile.products[0].role,'核心排名款');
+  assert.equal(profile.products[0].heat.level,'高');
+});
+
+test('shop roles are explicit inferences and shop comparison keeps unique products',()=>{
+  const base={shopCode:'s',shopName:'Shop',category:{id:'a',name:'Bra'},itemPrice:3200,pointRate:1};
+  const rows=[
+    {...base,itemCode:'s:1',rank:55,previousRank:80,change:25,comparisonState:'matched',promotionHints:['30%OFFクーポン']},
+    {...base,itemCode:'s:2',rank:120,previousRank:null,change:null,comparisonState:'entered',promotionHints:[]},
+    {...base,shopCode:'t',shopName:'Other',itemCode:'t:1',rank:5,previousRank:6,change:1,comparisonState:'matched',promotionHints:[]}
+  ];
+  const profile=A.shopProfile(rows,'s');
+  assert.equal(profile.products.find(p=>p.product.itemCode==='s:1').role,'活动冲榜款');
+  assert.equal(profile.products.find(p=>p.product.itemCode==='s:2').role,'新进榜测试款');
+  assert.deepEqual(A.compareShops(rows,['s','t']).map(s=>s.key),['t','s']);
 });
 test('coverage distinguishes failed genres, empty observations, absence and rank',()=>{
   const capture={genres:{a:{'s:1':100},b:{}}};
