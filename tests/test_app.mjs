@@ -22,7 +22,7 @@ function app() {
     window: { localStorage: storage }, localStorage: storage, Intl, Date, console, URL,
     fetch: async () => ({ ok: true, json: async () => ({ events: [] }) }) });
   const source = readFileSync(new URL('../assets/app.js', import.meta.url), 'utf8')
-    .replace(/^import .*?;\n/gm, '').replace(/\ninit\(\);\s*$/, '');
+    .replace(/^import .*?;\r?\n/gm, '').replace(/\r?\ninit\(\);\s*$/, '');
   vm.runInContext(source, context);
   vm.runInContext(`state.latest = { rankings: { 1: [{ itemCode: 'a', itemName: '<script>bad</script>', rank: 1, change: 5, itemPrice: 1000, pointRate: 2 }] }, categories: [{ id: 1, group: 'bra', name: 'Bra' }] }; state.history = { captures: [] }; state.updateLog = { days: [] };`, context);
   return { context, element, storage, run: code => vm.runInContext(code, context) };

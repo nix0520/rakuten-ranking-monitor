@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI 运营日报 · Rakuten</title><link rel="stylesheet" href="styles.css"><style>#reportEvents details{padding:16px 0;border-bottom:1px solid #ddd;overflow-wrap:anywhere}#reportEvents summary{cursor:pointer;line-height:1.7}#reportEvents p{line-height:1.7}#reportEvents summary::marker{color:#b62537}.health-panel a{flex-shrink:0}#more{margin-top:20px}</style></head>
+<body>
+<header class="hero"><div><p class="eyebrow">RAKUTEN MARKET INTELLIGENCE</p><h1>AI 运营日报 <small>V1</small></h1><p class="subtitle">昨日对比 · 异常筛选 · 待验证行动</p></div><a href="../index.html">返回排行榜</a></header>
+<main>
+<section class="health-panel"><div><strong>规则分析版 · 未调用大模型</strong><p id="reportStatus" role="status">正在读取日报…</p><small>独立日榜报告，覆盖全部类目，不继承排行榜筛选。刷新页面读取最新发布结果。</small></div><a id="download" hidden download>下载 AI 数据（重点50条）</a></section>
+<section id="reportSummary" class="summary" aria-label="日报概览"></section>
+<section class="analysis-panel"><h2>事实：重点变化</h2><label>类目 <select id="reportGenre"><option value="">全部类目</option></select></label><p id="eventCount"></p><div id="reportEvents"></div><button id="more" hidden>再显示30条</button></section>
+<section class="analysis-panel"><h2>推测与待验证行动</h2><p>本版不自动推断因果。以下行动是核对建议。</p><ul id="actions"></ul></section>
+<details class="observation-panel"><summary>数据覆盖、缺项和规则</summary><div id="coverage"></div></details>
+</main><script type="module" src="ai-operations.mjs"></script>
+</body></html>

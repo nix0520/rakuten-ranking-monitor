@@ -36,6 +36,9 @@ jobs:
           cp -r assets data _site/
           touch _site/.nojekyll
 
+      - name: Generate AI operations report from saved daily history
+        run: python3 scripts/generate_ai_report.py --output-dir _site/data/ai-reports
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
