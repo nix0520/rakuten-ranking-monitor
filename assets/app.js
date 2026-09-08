@@ -333,7 +333,7 @@ function render() {
   $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (detected ? dateTime.format(new Date(detected)) : "判定待ち");
   $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "15:00完全取得・未完了時は16:00から毎時確認");
   const selected = selectedCategories();
-  const groupNames = { bra: "Bra", shorts: "ショーツ", veimia: "VEIMIA追加" };
+  const groupNames = { bra: "Bra", shorts: "ショーツ" };
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${groupNames[state.group] || state.group}グループ · ${selected.length}ジャンル`;
   $("#comparisonNote").textContent = state.mode === "daily" ? `日榜：${state.viewSnapshot?.day || "最新"} vs ${state.baselineSnapshot?.day || "過去日未記録"}。価格・ポイントも同じ2日の取得時点を比較。通常上位100位、全保存順位も選択可。` : `リアルタイム：前回の成功した取得との比較（通常20分間隔）。前回：${formatStamp(state.realtimeLatest?.previousCapturedAt)}。`;
   $("#watchStatus").textContent = `${state.watchlist.size}商品を保存 · 現在のジャンル・検索条件・収集範囲に一致する商品だけ表示`;
@@ -461,7 +461,7 @@ async function selectMode(mode) {
   state.mode = mode;
   state.category = "all";
   document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.classList.toggle("active", button.dataset.rankingMode === mode));
-  $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ・VEIMIA関連34ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra・ショーツ・VEIMIA関連、34ジャンルの日次ランキング最大1000位を追跡";
+  $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ関連34ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra・ショーツ関連、34ジャンルの日次ランキング最大1000位を追跡";
   await refreshView();
   $("#errorBox").hidden = Boolean(state.latest?.generatedAt);
   if (!state.latest?.generatedAt) $("#errorBox").textContent = "選択した榜の保存データがありません。";
