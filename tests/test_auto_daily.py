@@ -53,20 +53,20 @@ class AutoDailyTests(unittest.TestCase):
         log = fetch.load_json(self.output / "daily-update-log.json", {})
         return [o["autoDailyFetch"] for d in log["days"] for o in d["observations"] if "autoDailyFetch" in o]
 
-    def test_new_day_runs_full_17_categories_once_and_uses_yesterday(self):
+    def test_new_day_runs_full_34_categories_once_and_uses_yesterday(self):
         self.run_probe()
-        self.assertEqual(len(self.calls), 34)
-        self.assertEqual([c["max_rank"] for c in self.calls], [30] * 17 + [1000] * 17)
-        self.assertTrue(all(c["expected_date"] == self.today for c in self.calls[17:]))
+        self.assertEqual(len(self.calls), 68)
+        self.assertEqual([c["max_rank"] for c in self.calls], [30] * 34 + [1000] * 34)
+        self.assertTrue(all(c["expected_date"] == self.today for c in self.calls[34:]))
         latest = fetch.load_json(self.output / "latest.json", {})
         self.assertEqual(latest["aggregateDate"], self.today)
-        self.assertEqual(len(latest["rankings"]), 17)
+        self.assertEqual(len(latest["rankings"]), 34)
         item = latest["rankings"][str(self.categories[0]["id"])][0]
         self.assertEqual(item["change"], 3)
         self.assertEqual(item["previousRank"], 5)
         self.assertEqual(self.attempts()[0]["status"], "succeeded")
         self.run_probe()
-        self.assertEqual(len(self.calls), 34)  # published day skips before the API
+        self.assertEqual(len(self.calls), 68)  # published day skips before the API
         self.assertEqual(fetch.load_json(self.output / "latest.json", {}), latest)
         self.assertEqual(len(self.attempts()), 1)
 
@@ -85,14 +85,14 @@ class AutoDailyTests(unittest.TestCase):
         for day in [self.yesterday, "invalid", (self.now + timedelta(days=1)).date().isoformat()]:
             self.source_day = day
             self.run_probe()
-        self.assertEqual(len(self.calls), 51)
+        self.assertEqual(len(self.calls), 102)
         self.assertTrue(all(c["max_rank"] == 30 for c in self.calls))
         self.assertEqual(fetch.load_json(self.output / "latest.json", {}), self.previous)
 
     def test_already_detected_but_unpublished_still_triggers(self):
         fetch.update_daily_observations(self.output, self.old_rows, self.now, self.today)
         self.run_probe()
-        self.assertEqual(len(self.calls), 34)
+        self.assertEqual(len(self.calls), 68)
         self.assertEqual(self.attempts()[0]["status"], "succeeded")
 
     def test_complete_current_daily_skips_probe_before_api_request(self):
@@ -196,9 +196,9 @@ class AutoDailyTests(unittest.TestCase):
     def test_legacy_current_day_is_refetched_once_for_pagination_fix(self):
         fetch.write_json(self.output / "latest.json", {**self.previous, "aggregateDate": self.today})
         self.run_probe()
-        self.assertEqual(len(self.calls), 34)
+        self.assertEqual(len(self.calls), 68)
         self.run_probe()
-        self.assertEqual(len(self.calls), 34)
+        self.assertEqual(len(self.calls), 68)
 
     def test_consistently_empty_current_day_does_not_copy_yesterday(self):
         genre = str(self.categories[0]["id"])

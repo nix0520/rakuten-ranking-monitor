@@ -116,7 +116,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const watched=digest.filter(r=>state.watchlist.has(r.itemCode));
     $('#watchDigest').innerHTML=table(['收藏商品','变化'],watched.map(r=>[rowLink(r),esc(r.messages.join(' · '))]));
     const allShopRows=shopRows();
-    $('#shopOverview').innerHTML=textTable(['店铺','上榜商品','前10','前100','上涨','下跌'],A.shopOverview(allShopRows).map(s=>[s.name,s.items,s.top10,s.top100,s.up,s.down]))+'<small>覆盖当前日榜全部17个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+    $('#shopOverview').innerHTML=textTable(['店铺','上榜商品','前10','前100','上涨','下跌'],A.shopOverview(allShopRows).map(s=>[s.name,s.items,s.top10,s.top100,s.up,s.down]))+'<small>覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
     renderShopAnalysis(allShopRows);
     $('#priceBands').innerHTML=textTable(['API价格带（当前范围前100名）','商品数'],A.priceBands(rows).map(b=>[b.label,b.count]));
     const reviewRows=[...new Map(rows.filter(r=>r.rank!=null).map(r=>[r.itemCode,r])).values()].map(r=>({r,a:A.reviewGrowth(series(r),day,7),b:A.reviewGrowth(series(r),day,30)}));

@@ -100,12 +100,12 @@ def write_json(path: Path, value: Any) -> None:
 
 def validate_categories(categories: list[dict[str, Any]]) -> None:
     ids = [int(category["id"]) for category in categories]
-    if len(categories) != 17:
-        raise ValueError(f"Expected exactly 17 categories, found {len(categories)}")
+    if len(categories) != 34:
+        raise ValueError(f"Expected exactly 34 categories, found {len(categories)}")
     if len(set(ids)) != len(ids):
         raise ValueError("Category IDs must be unique")
-    if {category.get("group") for category in categories} != {"bra", "shorts"}:
-        raise ValueError("Categories must contain both bra and shorts groups")
+    if {category.get("group") for category in categories} != {"bra", "shorts", "veimia"}:
+        raise ValueError("Categories must contain bra, shorts, and veimia groups")
 
 
 def image_url(value: Any) -> str:

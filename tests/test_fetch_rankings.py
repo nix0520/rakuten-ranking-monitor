@@ -111,11 +111,11 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(fallback.utcoffset(None), timedelta(hours=9))
         self.assertEqual(fallback.tzname(None), "JST")
 
-    def test_category_configuration_is_exactly_17_unique_ids(self):
+    def test_category_configuration_is_exactly_34_unique_ids(self):
         categories = json.loads((ROOT / "config" / "categories.json").read_text(encoding="utf-8"))
         fetch.validate_categories(categories)
-        self.assertEqual(len(categories), 17)
-        self.assertEqual({item["group"] for item in categories}, {"bra", "shorts"})
+        self.assertEqual(len(categories), 34)
+        self.assertEqual({item["group"] for item in categories}, {"bra", "shorts", "veimia"})
         self.assertEqual(
             [item["id"] for item in categories if item["group"] == "bra"],
             [110854, 100442, 100433, 566228, 206742, 206725, 566018, 303662, 101817],
@@ -123,6 +123,11 @@ class RankingTests(unittest.TestCase):
         self.assertEqual(
             [item["id"] for item in categories if item["group"] == "shorts"],
             [110845, 206712, 206713, 206714, 566230, 206716, 206717, 100443],
+        )
+        self.assertEqual(
+            [item["id"] for item in categories if item["group"] == "veimia"],
+            [566232, 100447, 566701, 205233, 206743, 501882, 403933, 200873,
+             200875, 200877, 205776, 206440, 304078, 403725, 403871, 566229, 568191],
         )
 
     def test_normalize_supports_both_image_shapes(self):
@@ -305,8 +310,8 @@ class RankingTests(unittest.TestCase):
             fetch.run(args)
             latest = json.loads((Path(directory) / "latest.json").read_text(encoding="utf-8"))
             history = json.loads((Path(directory) / "history.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(latest["categories"]), 17)
-            self.assertEqual(len(latest["rankings"]), 17)
+            self.assertEqual(len(latest["categories"]), 34)
+            self.assertEqual(len(latest["rankings"]), 34)
             self.assertEqual(len(history["captures"]), 1)
             history_file = Path(directory) / history["captures"][0]["file"]
             self.assertTrue(history_file.exists())
@@ -388,7 +393,7 @@ class RankingTests(unittest.TestCase):
             self.assertEqual(latest["rankings"]["110854"][0]["priceChange"], -100)
             self.assertEqual(latest["rankings"]["110854"][0]["pointChange"], 4)
 
-    def test_realtime_mode_includes_all_17_genres(self):
+    def test_realtime_mode_includes_all_34_genres(self):
         with tempfile.TemporaryDirectory() as directory:
             args = fetch.parse_args([
                 "--fixture", str(ROOT / "tests" / "fixtures" / "api_page.json"),
@@ -397,8 +402,8 @@ class RankingTests(unittest.TestCase):
             ])
             fetch.run(args)
             latest = json.loads((Path(directory) / "realtime" / "latest.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(latest["categories"]), 17)
-            self.assertEqual(len(latest["rankings"]), 17)
+            self.assertEqual(len(latest["categories"]), 34)
+            self.assertEqual(len(latest["rankings"]), 34)
 
 
 if __name__ == "__main__":

@@ -61,7 +61,7 @@ $principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.Wind
 
 $dailyTask = New-ScheduledTask -Action (New-RankingAction "daily") -Trigger $dailyTrigger -Settings $settings -Principal $principal -Description "Fetch complete daily rankings directly at 15:00 JST."
 $probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Probe hourly from 16:00 through 23:00 JST until today's complete daily ranking is published."
-$realtimeTask = New-ScheduledTask -Action (New-RankingAction "realtime") -Trigger $realtimeTrigger -Settings $settings -Principal $principal -Description "Fetch all 17 realtime rankings every 20 minutes."
+$realtimeTask = New-ScheduledTask -Action (New-RankingAction "realtime") -Trigger $realtimeTrigger -Settings $settings -Principal $principal -Description "Fetch all 34 realtime rankings every 20 minutes."
 
 Unregister-ScheduledTask -TaskName "Rakuten Ranking Monitor" -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask -TaskName "Rakuten Ranking Daily Probe" -InputObject $probeTask -Force | Out-Null
@@ -73,7 +73,7 @@ Register-ScheduledTask -TaskName "Rakuten Ranking Realtime" -InputObject $realti
 Write-Host "Scheduled task installed successfully."
 Write-Host "JST full daily fetch: 15:00 directly (no preliminary probe)"
 Write-Host "JST fallback probes: 16:00 through 23:00 hourly; skip after today is complete"
-Write-Host "JST realtime 17-genre rankings: every 20 minutes at :05, :25, :45"
+Write-Host "JST realtime 34-genre rankings: every 20 minutes at :05, :25, :45"
 Write-Host "Running a lightweight daily probe now..."
 
 & (Join-Path $PSScriptRoot "windows_fetch.ps1") -Mode "daily-probe"
