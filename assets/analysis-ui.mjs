@@ -3,6 +3,7 @@ import { snapshotRows } from './history-tools.mjs';
 
 export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatStamp, sparkline}) {
   let notebook = A.readNotebook(globalThis.localStorage), currentRow = null, busy = false;
+  let selectedShopKey = '';
   const filters = {group:'',tag:'',signal:'',min:'',max:''};
   const captures = () => state.archive?.length ? state.archive : state.history?.captures || [];
   const endDay = () => state.viewSnapshot?.day || state.latest?.aggregateDate;
@@ -18,6 +19,10 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   const table = (heads, rows) => '<div class="analysis-scroll"><table class="analysis-table"><thead><tr>'+heads.map(h=>'<th>'+esc(h)+'</th>').join('')+'</tr></thead><tbody>'+ (rows.length ? rows.map(row=>'<tr>'+row.map(v=>'<td>'+v+'</td>').join('')+'</tr>').join('') : '<tr><td colspan="'+heads.length+'">該当する記録がありません。</td></tr>')+'</tbody></table></div>';
   const textTable = (heads, rows) => table(heads,rows.map(row=>row.map(v=>esc(v ?? '未記録'))));
   const safeImage = value => {
+    try { const url=new URL(value); return ['http:','https:'].includes(url.protocol) ? esc(url.href) : ''; }
+    catch { return ''; }
+  };
+  const safeUrl = value => {
     try { const url=new URL(value); return ['http:','https:'].includes(url.protocol) ? esc(url.href) : ''; }
     catch { return ''; }
   };
@@ -63,6 +68,42 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const reasons={source_day_not_current:'API仍为旧集计日',below_same_day_minimum:'少于当日已观察数量',count_drop:'数量突然减少',request_or_validation_error:'请求或日期校验失败'};
     $('#collectionProgress').innerHTML='<strong>'+esc(labels[status.status]||status.status)+' · '+esc(status.completed)+'/'+esc(status.total)+'类目</strong><p>集计日 '+esc(status.aggregateDate)+' · 状态同步 '+esc(formatStamp(status.updatedAt))+(status.nextRetryAt?' · 下次计划 '+esc(formatStamp(status.nextRetryAt)):'')+'</p>'+textTable(['类目','状态','条数','说明'],Object.entries(status.genres||{}).map(([id,g])=>[id+' '+g.name,g.status,g.count??'—',g.warning==='count_drop_confirmed_twice'?'数量减少，经两次采集复核':reasons[g.reason]||(g.resumed?'复用本次集计日成功记录':'')]))+'<small>网页显示最后上传的状态；采集中实时进度在本机终端。下次执行仍需电脑开机、登录和网络正常。</small>';
   }
+  function shopRows() {
+    return snapshotRows(state.viewSnapshot,state.baselineSnapshot,state.latest?.categories||[]);
+  }
+  function shopHistory(product) {
+    return A.observationSeries(captures(),product.category.id,product.itemCode,endDay());
+  }
+  function renderShopAnalysis(rows) {
+    const shops=A.shopOverview(rows), select=$('#shopAnalysisSelect');
+    if(!shops.some(s=>s.key===selectedShopKey))selectedShopKey=shops[0]?.key||'';
+    select.innerHTML=shops.length?shops.map(s=>'<option value="'+esc(s.key)+'"'+(s.key===selectedShopKey?' selected':'')+'>'+esc(s.name+' · '+s.items+'商品')+'</option>').join(''):'<option value="">暂无店铺</option>';
+    const profile=A.shopProfile(rows,selectedShopKey,shopHistory);
+    if(!profile){$('#shopAnalysis').innerHTML='<p>当前集计日没有可分析的店铺。</p>';return;}
+    const shopUrl=safeUrl(profile.url), heading=shopUrl?'<a href="'+shopUrl+'" target="_blank" rel="noopener noreferrer">'+esc(profile.name)+'</a>':esc(profile.name);
+    const summary=[['上榜商品',profile.itemCount],['覆盖类目',profile.categoryCount],['前10名',profile.top10],['前30名',profile.top30],['前100名',profile.top100],['上涨商品',profile.rising],['新进榜',profile.entered],['有促销线索',profile.promoted]];
+    const products=profile.products.slice().sort((a,b)=>b.heat.score-a.heat.score||a.product.bestRank-b.product.bestRank);
+    const roleCounts=[...new Map(products.map(p=>[p.role,0])).keys()].map(role=>[role,products.filter(p=>p.role===role).length]);
+    const promotionRows=products.flatMap(({product})=>A.promotionTimeline(shopHistory(product)).filter(p=>p.known&&p.label!=='販促文言なし').map(p=>({product,period:p}))).sort((a,b)=>b.period.end.localeCompare(a.period.end)).slice(0,50);
+    const strongest=products.slice(0,3).map(p=>p.product.itemName?.slice(0,28)||p.product.itemCode).join('、')||'暂无';
+    $('#shopAnalysis').innerHTML='<div class="shop-analysis-heading"><h3>'+heading+'</h3><small>店铺代码：'+esc(profile.key)+'</small></div>'+
+      '<div class="shop-kpis">'+summary.map(([label,value])=>'<article><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></article>').join('')+'</div>'+
+      '<p><strong>系统观察：</strong>中位价格 '+esc(profile.medianPrice==null?'未记录':amount(profile.medianPrice))+'；价格范围 '+esc(profile.minPrice==null?'未记录':amount(profile.minPrice)+'～'+amount(profile.maxPrice))+'；API积分加倍商品 '+esc(profile.pointed)+'款。当前热度较高的商品：'+esc(strongest)+'。</p>'+
+      '<h3>推测的商品角色与热度</h3>'+table(['商品','推测角色','推定热度','最好排名 / 覆盖','公开促销线索'],products.map(({product,role,reason,heat})=>[rowLink(product),'<strong>'+esc(role)+'</strong><small>'+esc(reason)+'</small>','<span class="heat heat-'+(heat.level==='高'?'high':heat.level==='中'?'mid':'low')+'">'+esc(heat.level+' '+heat.score)+'</span><small>'+esc(heat.reasons.join(' · ')||'信号不足')+'</small>',esc(product.bestRank+'位 / '+product.categoryCount+'类目'),esc((product.promotionHints||[]).join(' · ')||'未发现')]))+
+      '<small>商品角色和热度是根据排名、类目覆盖、评论变化与促销线索推测，不代表真实销量。</small>'+
+      '<h3>角色结构</h3>'+textTable(['推测角色','商品数'],roleCounts)+
+      '<h3>店铺促销观察时间轴</h3>'+table(['商品','首次观察','最后观察','公开文字线索'],promotionRows.map(({product,period})=>[rowLink(product),esc(period.start),esc(period.end),esc(period.label)]))+
+      '<p class="analysis-limit"><strong>数据边界：</strong>竞争店铺的真实销量、订单数和准确库存不公开。商品页若公开显示售罄或“剩余少量”，后续可记录为公开库存状态，但不会推算库存件数。</p>';
+
+    const previous=[...($('#shopCompareSelect').selectedOptions||[])].map(o=>o.value);
+    $('#shopCompareSelect').innerHTML=shops.map(s=>'<option value="'+esc(s.key)+'"'+(previous.includes(s.key)?' selected':'')+'>'+esc(s.name+' · '+s.items+'商品')+'</option>').join('');
+  }
+  function renderShopComparison() {
+    const keys=[...$('#shopCompareSelect').selectedOptions].map(o=>o.value);
+    if(keys.length<2||keys.length>5){$('#shopComparison').textContent='请选择2～5家店铺。';return;}
+    const profiles=A.compareShops(shopRows(),keys,shopHistory);
+    $('#shopComparison').innerHTML=textTable(['店铺','上榜商品','覆盖类目','前10','前100','上涨','促销线索','中位价格'],profiles.map(p=>[p.name,p.itemCount,p.categoryCount,p.top10,p.top100,p.rising,p.promoted,p.medianPrice==null?'未记录':amount(p.medianPrice)]))+'<small>按商品去重；这是当前集计日公开榜单表现，不等于店铺销量。</small>';
+  }
   function render() {
     $('#analysisPanel').hidden=state.mode!=='daily';
     renderStatus(state.collectionStatus);
@@ -74,7 +115,9 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#dailyDigest').innerHTML=table(['商品','相对 '+(state.baselineSnapshot?.day||'前次集计日')+' 的变化'],digest.slice(0,30).map(r=>[rowLink(r),esc(r.messages.join(' · '))]))+'<small>共 '+digest.length+' 条变化，摘要展示前30条；完整排名表可筛选并导出CSV。</small>';
     const watched=digest.filter(r=>state.watchlist.has(r.itemCode));
     $('#watchDigest').innerHTML=table(['收藏商品','变化'],watched.map(r=>[rowLink(r),esc(r.messages.join(' · '))]));
-    $('#shopOverview').innerHTML=textTable(['店铺','上榜商品','前10','前100','上涨','下跌'],A.shopOverview(rows).map(s=>[s.name,s.items,s.top10,s.top100,s.up,s.down]))+'<small>同商品跨类目去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+    const allShopRows=shopRows();
+    $('#shopOverview').innerHTML=textTable(['店铺','上榜商品','前10','前100','上涨','下跌'],A.shopOverview(allShopRows).map(s=>[s.name,s.items,s.top10,s.top100,s.up,s.down]))+'<small>覆盖当前日榜全部17个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+    renderShopAnalysis(allShopRows);
     $('#priceBands').innerHTML=textTable(['API价格带（当前范围前100名）','商品数'],A.priceBands(rows).map(b=>[b.label,b.count]));
     const reviewRows=[...new Map(rows.filter(r=>r.rank!=null).map(r=>[r.itemCode,r])).values()].map(r=>({r,a:A.reviewGrowth(series(r),day,7),b:A.reviewGrowth(series(r),day,30)}));
     $('#reviewGrowth').innerHTML=table(['商品','7天评论增量','30天评论增量','7天评分变化'],reviewRows.sort((a,b)=>(b.a.count??-Infinity)-(a.a.count??-Infinity)).slice(0,30).map(({r,a,b})=>[rowLink(r),esc(a.count??'未记录'),esc(b.count??'未记录'),esc(a.rating===null?'未记录':a.rating.toFixed(2))]))+'<small>仅比较准确相隔7/30日的保存数据。负数可能来自评论清理；评论增量不等于销量。30日比较需31个日期，可通过归档加载补足。</small>';
@@ -214,6 +257,8 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
       }catch(e){$('#calendarStatus').textContent=e.message;}
     });
     $('#drawMultiTrend').addEventListener('click',compareProducts);
+    $('#shopAnalysisSelect').addEventListener('change',event=>{selectedShopKey=event.target.value;render();});
+    $('#compareShops').addEventListener('click',renderShopComparison);
     $('#loadArchive').addEventListener('click',loadArchive);
     $('#exportAnalysis').addEventListener('click',()=>download('ranking-analysis-notes.json',notebook));
     $('#exportArchive').addEventListener('click',()=>download('ranking-loaded-history.json',{captures:captures()}));

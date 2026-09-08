@@ -99,7 +99,13 @@
       <p class="eyebrow">COMPETITOR ANALYSIS</p><h2>竞品分析与每日摘要</h2><p id="analysisBasis"></p>
       <details open><summary>每日变化摘要</summary><div id="dailyDigest"></div></details>
       <details><summary>收藏商品变化汇总</summary><div id="watchDigest"></div></details>
-      <details><summary>竞品店铺总览</summary><div id="shopOverview"></div></details>
+      <details open><summary>竞品店铺总览</summary><div id="shopOverview"></div></details>
+      <details open><summary>单店深度分析</summary>
+        <p>基于公开排行榜记录判断店铺的排名覆盖、主推款、促销节奏和评论变化。真实销量与准确库存不是公开数据，不会虚构。</p>
+        <div class="analysis-controls"><label>选择店铺<select id="shopAnalysisSelect"><option value="">暂无店铺</option></select></label></div>
+        <div id="shopAnalysis"></div>
+      </details>
+      <details><summary>多店对比</summary><p>选择2～5家店，对比当前集计日的公开表现。按住Ctrl可多选。</p><select id="shopCompareSelect" multiple size="6" aria-label="选择对比店铺"></select><button id="compareShops" type="button">生成店铺对比</button><div id="shopComparison"></div></details>
       <details><summary>价格区间分析</summary><div id="priceBands"></div></details>
       <details><summary>评论增长与评分变化</summary><div id="reviewGrowth"></div></details>
       <details><summary>商品标题修改记录</summary><p>每天完整日榜保存商品标题，超过30天后随日榜进入长期归档。载入旧归档可继续追溯；上线前没有保存的标题无法补回。</p><div id="titleUpdates"></div></details>

@@ -94,6 +94,77 @@ export function shopOverview(rows) {
   }
   return [...stores.values()].map(s=>({...s,items:s.items.size,top10:s.top10.size,top100:s.top100.size,up:s.up.size,down:s.down.size})).sort((a,b)=>b.top10-a.top10||b.items-a.items);
 }
+
+const bestRank = rows => Math.min(...rows.map(r=>r.rank).filter(Number.isFinite), Infinity);
+const median = values => {
+  const sorted=values.filter(Number.isFinite).sort((a,b)=>a-b);
+  if(!sorted.length)return null;
+  const middle=Math.floor(sorted.length/2);
+  return sorted.length%2 ? sorted[middle] : Math.round((sorted[middle-1]+sorted[middle])/2);
+};
+
+export function shopProducts(rows, shopKey) {
+  const products=new Map();
+  for(const row of rows.filter(r=>(r.shopCode||r.itemCode.split(':')[0])===shopKey&&r.rank!=null)){
+    const product=products.get(row.itemCode)||{...row,categories:[],ranks:[],bestRank:Infinity,bestPreviousRank:Infinity};
+    product.categories.push(row.category);product.ranks.push({genre:String(row.category.id),name:row.category.name,rank:row.rank,previousRank:row.previousRank,change:row.change,comparisonState:row.comparisonState});
+    if(row.rank<product.bestRank){Object.assign(product,row);product.bestRank=row.rank;}
+    if(Number.isFinite(row.previousRank))product.bestPreviousRank=Math.min(product.bestPreviousRank,row.previousRank);
+    products.set(row.itemCode,product);
+  }
+  return [...products.values()].map(p=>({...p,bestPreviousRank:Number.isFinite(p.bestPreviousRank)?p.bestPreviousRank:null,categoryCount:new Set(p.categories.map(c=>String(c.id))).size})).sort((a,b)=>a.bestRank-b.bestRank);
+}
+
+export function inferProductRole(product, history=[]) {
+  const latest=history.at(-1), previous=history.at(-2);
+  const reviewDelta=latest?.reviews!=null&&previous?.reviews!=null?latest.reviews-previous.reviews:null;
+  const promoted=(product.promotionHints||[]).length>0;
+  const rising=product.ranks.some(r=>Number.isFinite(r.change)&&r.change>0);
+  const entered=product.ranks.some(r=>r.comparisonState==='entered');
+  let role='稳定观察款',reason='已进榜，暂未出现明确的强变化信号';
+  if(product.bestRank<=10){role='核心排名款';reason=`当前最好${product.bestRank}位，承担店铺排名曝光`;}
+  else if(promoted&&rising){role='活动冲榜款';reason='带促销线索且排名同时上涨';}
+  else if(entered){role='新进榜测试款';reason='相对上一集计日首次进入已采集范围';}
+  else if(rising){role='上升潜力款';reason='至少一个类目排名上涨';}
+  else if(promoted){role='促销测试款';reason='存在优惠券或促销文字，排名尚未形成强势位置';}
+  else if(reviewDelta>0){role='口碑积累款';reason=`最近两个有效记录间评论增加${reviewDelta}条`;}
+  return {role,reason};
+}
+
+export function productHeat(product, history=[]) {
+  const rank=product.bestRank;
+  let score=Number.isFinite(rank)?Math.max(0,45-Math.min(45,Math.log10(Math.max(rank,1))*18)):0;
+  const reasons=[];
+  if(rank<=10){score+=20;reasons.push(`最好${rank}位`);}else if(rank<=100){score+=10;reasons.push(`最好${rank}位`);}
+  if(product.categoryCount>=3){score+=10;reasons.push(`覆盖${product.categoryCount}个类目`);}
+  if(product.ranks.some(r=>Number.isFinite(r.change)&&r.change>0)){score+=10;reasons.push('排名上涨');}
+  const last=history.at(-1), prior=history.at(-2);
+  if(last?.reviews!=null&&prior?.reviews!=null&&last.reviews>prior.reviews){score+=10;reasons.push(`评论+${last.reviews-prior.reviews}`);}
+  if((product.promotionHints||[]).length){score+=5;reasons.push('存在促销线索');}
+  score=Math.max(0,Math.min(100,Math.round(score)));
+  return {score,level:score>=70?'高':score>=45?'中':'低',reasons};
+}
+
+export function shopProfile(rows, shopKey, historyFor=()=>[]) {
+  const products=shopProducts(rows,shopKey);
+  if(!products.length)return null;
+  const categories=new Set(products.flatMap(p=>p.categories.map(c=>String(c.id))));
+  const promoted=products.filter(p=>(p.promotionHints||[]).length);
+  const pointed=products.filter(p=>Number.isFinite(p.pointRate)&&p.pointRate>1);
+  const roles=products.map(p=>({product:p,...inferProductRole(p,historyFor(p)),heat:productHeat(p,historyFor(p))}));
+  const prices=products.map(p=>p.itemPrice).filter(Number.isFinite);
+  return {key:shopKey,name:products[0].shopName||shopKey,url:products[0].shopUrl||'',products:roles,
+    itemCount:products.length,categoryCount:categories.size,top10:products.filter(p=>p.bestRank<=10).length,
+    top30:products.filter(p=>p.bestRank<=30).length,top100:products.filter(p=>p.bestRank<=100).length,
+    rising:products.filter(p=>p.ranks.some(r=>Number.isFinite(r.change)&&r.change>0)).length,
+    falling:products.filter(p=>p.ranks.some(r=>Number.isFinite(r.change)&&r.change<0)).length,
+    entered:products.filter(p=>p.ranks.some(r=>r.comparisonState==='entered')).length,
+    promoted:promoted.length,pointed:pointed.length,medianPrice:median(prices),minPrice:prices.length?Math.min(...prices):null,maxPrice:prices.length?Math.max(...prices):null};
+}
+
+export function compareShops(rows, keys, historyFor=()=>[]) {
+  return keys.map(key=>shopProfile(rows,key,historyFor)).filter(Boolean).sort((a,b)=>b.top10-a.top10||b.itemCount-a.itemCount);
+}
 export function priceBands(rows) {
   const bins=[{label:'～1,999円',min:0,max:2000},{label:'2,000～2,999円',min:2000,max:3000},{label:'3,000～3,999円',min:3000,max:4000},{label:'4,000～4,999円',min:4000,max:5000},{label:'5,000円～',min:5000,max:Infinity}];
   const unique=new Map(rows.filter(r=>r.rank!=null&&r.rank<=100&&Number.isFinite(r.itemPrice)).map(r=>[r.itemCode,r]));

@@ -44,6 +44,9 @@ const server=http.createServer((req,res)=>{
     await page.selectOption('#categorySelect',genre);
     assert.equal(await page.locator('#rankingBody tr').count(),2);
     assert.equal(await page.locator('#dailyDigest .analysis-product img').count()>0,true);
+    assert.equal(await page.locator('#shopAnalysisSelect option').count()>0,true);
+    assert.match(await page.locator('#shopAnalysis').innerText(),/推测的商品角色与热度/);
+    assert.match(await page.locator('#shopAnalysis').innerText(),/真实销量、订单数和准确库存不公开/);
     assert.equal(await page.locator('#dailyDigest').innerText().then(t=>t.includes('Test shop')),true);
     const summaryLink=page.locator('#dailyDigest .analysis-product-title').first();
     assert.equal(await summaryLink.getAttribute('href'),'https://item.rakuten.co.jp/test/product/');
