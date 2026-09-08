@@ -4,6 +4,7 @@ import { snapshotRows } from './history-tools.mjs';
 export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatStamp, sparkline}) {
   let notebook = A.readNotebook(globalThis.localStorage), currentRow = null, busy = false;
   let selectedShopKey = '';
+  let shopOverviewSort = {key:'top10', direction:'desc'};
   const filters = {group:'',tag:'',signal:'',min:'',max:''};
   const captures = () => state.archive?.length ? state.archive : state.history?.captures || [];
   const endDay = () => state.viewSnapshot?.day || state.latest?.aggregateDate;
@@ -74,6 +75,17 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   function shopHistory(product) {
     return A.observationSeries(captures(),product.category.id,product.itemCode,endDay());
   }
+  function renderShopOverview(rows) {
+    const columns=[['name','店铺'],['items','上榜商品'],['top10','前10'],['top100','前100'],['up','上涨'],['down','下跌']];
+    const shops=A.sortShopOverview(A.shopOverview(rows),shopOverviewSort.key,shopOverviewSort.direction);
+    const headings=columns.map(([key,label])=>{
+      const active=key===shopOverviewSort.key, arrow=active?(shopOverviewSort.direction==='asc'?'▲':'▼'):'';
+      const aria=active?(shopOverviewSort.direction==='asc'?'ascending':'descending'):'none';
+      return '<th aria-sort="'+aria+'"><button class="analysis-sort-button" type="button" data-shop-sort="'+key+'">'+esc(label)+'<span aria-hidden="true">'+arrow+'</span></button></th>';
+    }).join('');
+    const body=shops.length?shops.map(s=>'<tr>'+columns.map(([key])=>'<td>'+esc(s[key])+'</td>').join('')+'</tr>').join(''):'<tr><td colspan="'+columns.length+'">該当する記録がありません。</td></tr>';
+    $('#shopOverview').innerHTML='<div class="analysis-scroll"><table class="analysis-table"><thead><tr>'+headings+'</tr></thead><tbody>'+body+'</tbody></table></div><small>表头可点击切换升序/降序。覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+  }
   function renderShopAnalysis(rows) {
     const shops=A.shopOverview(rows), select=$('#shopAnalysisSelect');
     if(!shops.some(s=>s.key===selectedShopKey))selectedShopKey=shops[0]?.key||'';
@@ -116,7 +128,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const watched=digest.filter(r=>state.watchlist.has(r.itemCode));
     $('#watchDigest').innerHTML=table(['收藏商品','变化'],watched.map(r=>[rowLink(r),esc(r.messages.join(' · '))]));
     const allShopRows=shopRows();
-    $('#shopOverview').innerHTML=textTable(['店铺','上榜商品','前10','前100','上涨','下跌'],A.shopOverview(allShopRows).map(s=>[s.name,s.items,s.top10,s.top100,s.up,s.down]))+'<small>覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+    renderShopOverview(allShopRows);
     renderShopAnalysis(allShopRows);
     $('#priceBands').innerHTML=textTable(['API价格带（当前范围前100名）','商品数'],A.priceBands(rows).map(b=>[b.label,b.count]));
     const reviewRows=[...new Map(rows.filter(r=>r.rank!=null).map(r=>[r.itemCode,r])).values()].map(r=>({r,a:A.reviewGrowth(series(r),day,7),b:A.reviewGrowth(series(r),day,30)}));
@@ -244,6 +256,15 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
       $( '#'+id).addEventListener('change',event=>{filters[key]=event.target.value;refreshView();});
     }
     $('#analysisPanel').addEventListener('click',event=>{
+      const sort=event.target.closest('[data-shop-sort]');
+      if(sort){
+        const key=sort.dataset.shopSort;
+        shopOverviewSort=shopOverviewSort.key===key
+          ? {key,direction:shopOverviewSort.direction==='asc'?'desc':'asc'}
+          : {key,direction:key==='name'?'asc':'desc'};
+        renderShopOverview(shopRows());
+        return;
+      }
       const btn=event.target.closest('[data-analysis-detail]');
       if(btn){const r=state.rows.find(r=>r.itemCode===btn.dataset.analysisDetail&&String(r.category.id)===btn.dataset.genre);if(r)openDetail(r);}
       const del=event.target.closest('[data-delete-event]');
