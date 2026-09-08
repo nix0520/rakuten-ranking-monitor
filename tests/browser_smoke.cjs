@@ -33,7 +33,7 @@ const server=http.createServer((req,res)=>{
       if(p==='history.json')data={captures:snapshots.slice(1)};
       if(p==='daily-update-log.json')data={days:[]};
       if(p==='realtime/latest.json')data=latest();
-      if(p==='collection-status.json')data={status:'complete',aggregateDate:day,completed:17,total:17,genres:{},updatedAt:latest().generatedAt};
+      if(p==='collection-status.json')data={status:'complete',aggregateDate:day,completed:34,total:34,genres:{},updatedAt:latest().generatedAt};
       if(p==='archive/index.json')data={captures:[{date:dates[0],file:'archive/ranks/'+dates[0]+'.json'}]};
       if(p==='archive/ranks/'+dates[0]+'.json')data={...snapshots[0],productsFile:'archive/products/'+dates[0]+'.json'};
       if(p==='archive/products/'+dates[0]+'.json')data={products:snapshots[0].products};

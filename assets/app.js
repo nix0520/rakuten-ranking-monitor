@@ -284,7 +284,7 @@ function renderHealth() {
   if (state.mode === "daily") {
     const labels = { published: "今日の日榜は公開済み / 今日已更新", incomplete: "日榜の一部ジャンルが欠測 / 部分类目数据缺失，待重新采集", pending: "新日榜を検出・自動取得対象 / 已检测新日榜，待自动采集完成", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
     title = labels[health.dailyState]; level = health.dailyState === "published" ? "good" : health.dailyStale ? "bad" : "warn";
-    detail = `公開日榜の集計日：${health.publishedDay || "不明"}。${health.firstSeen ? `新日榜の初回検出：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "探測記録は2時間以上前または未記録です。現在も旧榜のままとは断定できません。" : "探測で未公開の当日榜を検出すると、17ジャンルを自動で完全取得・公開します。同じ集計日は重複起動しません。"}${health.dailyStale ? " 公開日榜は前日より古い状態です。" : ""}`;
+    detail = `公開日榜の集計日：${health.publishedDay || "不明"}。${health.firstSeen ? `新日榜の初回検出：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "探測記録は2時間以上前または未記録です。現在も旧榜のままとは断定できません。" : "探測で未公開の当日榜を検出すると、34ジャンルを自動で完全取得・公開します。同じ集計日は重複起動しません。"}${health.dailyStale ? " 公開日榜は前日より古い状態です。" : ""}`;
     if (health.dailyState === "pending") {
       if (health.autoFetchState === "failed") {
         title = "自動取得失敗・次回探測で再試行 / 自动完整采集失败，待下次探测重试";
@@ -333,7 +333,8 @@ function render() {
   $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (detected ? dateTime.format(new Date(detected)) : "判定待ち");
   $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "15:00完全取得・未完了時は16:00から毎時確認");
   const selected = selectedCategories();
-  $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${state.group === "bra" ? "Bra" : "ショーツ"}グループ · ${selected.length}ジャンル`;
+  const groupNames = { bra: "Bra", shorts: "ショーツ", veimia: "VEIMIA追加" };
+  $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${groupNames[state.group] || state.group}グループ · ${selected.length}ジャンル`;
   $("#comparisonNote").textContent = state.mode === "daily" ? `日榜：${state.viewSnapshot?.day || "最新"} vs ${state.baselineSnapshot?.day || "過去日未記録"}。価格・ポイントも同じ2日の取得時点を比較。通常上位100位、全保存順位も選択可。` : `リアルタイム：前回の成功した取得との比較（通常20分間隔）。前回：${formatStamp(state.realtimeLatest?.previousCapturedAt)}。`;
   $("#watchStatus").textContent = `${state.watchlist.size}商品を保存 · 現在のジャンル・検索条件・収集範囲に一致する商品だけ表示`;
   $("#watchManager").innerHTML = [...state.watchlist].map(code => `<div>${escapeHtml(code)} <button type="button" data-remove-watch="${escapeHtml(code)}">削除</button></div>`).join("") || "保存した商品はありません。";
@@ -460,7 +461,7 @@ async function selectMode(mode) {
   state.mode = mode;
   state.category = "all";
   document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.classList.toggle("active", button.dataset.rankingMode === mode));
-  $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ17ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra & ショーツ、17ジャンルの日次ランキング最大1000位を追跡";
+  $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ・VEIMIA関連34ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra・ショーツ・VEIMIA関連、34ジャンルの日次ランキング最大1000位を追跡";
   await refreshView();
   $("#errorBox").hidden = Boolean(state.latest?.generatedAt);
   if (!state.latest?.generatedAt) $("#errorBox").textContent = "選択した榜の保存データがありません。";
