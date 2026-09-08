@@ -115,19 +115,16 @@ class RankingTests(unittest.TestCase):
         categories = json.loads((ROOT / "config" / "categories.json").read_text(encoding="utf-8"))
         fetch.validate_categories(categories)
         self.assertEqual(len(categories), 34)
-        self.assertEqual({item["group"] for item in categories}, {"bra", "shorts", "veimia"})
+        self.assertEqual({item["group"] for item in categories}, {"bra", "shorts"})
         self.assertEqual(
             [item["id"] for item in categories if item["group"] == "bra"],
-            [110854, 100442, 100433, 566228, 206742, 206725, 566018, 303662, 101817],
+            [110854, 100442, 100433, 566228, 206742, 206725, 566018, 303662, 101817,
+             100447, 566701, 205233, 206743, 200873, 200877, 304078, 403871, 566229, 568191],
         )
         self.assertEqual(
             [item["id"] for item in categories if item["group"] == "shorts"],
-            [110845, 206712, 206713, 206714, 566230, 206716, 206717, 100443],
-        )
-        self.assertEqual(
-            [item["id"] for item in categories if item["group"] == "veimia"],
-            [566232, 100447, 566701, 205233, 206743, 501882, 403933, 200873,
-             200875, 200877, 205776, 206440, 304078, 403725, 403871, 566229, 568191],
+            [110845, 206712, 206713, 206714, 566230, 206716, 206717, 100443,
+             566232, 501882, 403933, 200875, 205776, 206440, 403725],
         )
 
     def test_normalize_supports_both_image_shapes(self):

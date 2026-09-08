@@ -104,8 +104,8 @@ def validate_categories(categories: list[dict[str, Any]]) -> None:
         raise ValueError(f"Expected exactly 34 categories, found {len(categories)}")
     if len(set(ids)) != len(ids):
         raise ValueError("Category IDs must be unique")
-    if {category.get("group") for category in categories} != {"bra", "shorts", "veimia"}:
-        raise ValueError("Categories must contain bra, shorts, and veimia groups")
+    if {category.get("group") for category in categories} != {"bra", "shorts"}:
+        raise ValueError("Categories must contain only bra and shorts groups")
 
 
 def image_url(value: Any) -> str:
