@@ -43,6 +43,9 @@ const server=http.createServer((req,res)=>{
     await page.locator('#rankingBody tr').first().waitFor();
     await page.selectOption('#categorySelect',genre);
     assert.equal(await page.locator('#rankingBody tr').count(),2);
+    assert.deepEqual(await page.locator('#pageSize option').allTextContents(),['50','100','200','1000']);
+    await page.selectOption('#pageSize','1000');
+    assert.equal(await page.inputValue('#pageSize'),'1000');
     assert.equal(await page.locator('.section-nav a').count(),6);
     assert.match(await page.locator('#priorityAlerts').innerText(),/大额优惠券/);
     assert.equal(await page.locator('#mergedProducts .analysis-product').count(),2);
