@@ -86,6 +86,21 @@ test('shop overview headers toggle ascending and descending sorting', async () =
   assert.match(html,/data-shop-sort="name">店铺<span aria-hidden="true">▼/);
 });
 
+test('shop analysis history opens for a product outside the current category filter', async () => {
+  const a = app();
+  a.run(`state.dailyLatest = {aggregateDate:'2026-09-08',generatedAt:'2026-09-08T15:00:00+09:00',categories:[
+    {id:1,group:'bra',name:'Bra'},{id:2,group:'bra',name:'Inner'}],rankings:{
+      1:[{itemCode:'s:1',shopCode:'s',shopName:'Shop',itemName:'Visible product',rank:1,itemPrice:1000,pointRate:1}],
+      2:[{itemCode:'s:2',shopCode:'s',shopName:'Shop',itemName:'Filtered product',rank:2,itemPrice:1200,pointRate:1}]
+    }}; state.category='1'; bindEvents();`);
+  await a.run('refreshView()');
+  assert.equal(a.run('state.rows.length'),1);
+  const panel=a.element('#analysisPanel');
+  panel.handlers.click({target:{closest:selector=>selector==='[data-analysis-detail]'?{dataset:{analysisDetail:'s:2',genre:'2'}}:null}});
+  assert.equal(a.element('#productDialog').open,true);
+  assert.equal(a.element('#detailTitle').textContent,'Filtered product');
+});
+
 test('favorite click persists, only-watched filter works, manager removes absent entries', () => {
   const a = app();
   a.run('bindEvents(); render()');

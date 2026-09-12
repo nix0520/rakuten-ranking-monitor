@@ -29,6 +29,21 @@ test('timeline gaps and unknown titles never fabricate changes or campaign dates
   assert.equal(A.titleChanges(series).length,0);
   assert.equal(A.activityComparison(series,'2026-09-03','2026-09-03')[0].observation,null);
 });
+test('title change export groups all shops and marks observation gaps',()=>{
+  const captures=[
+    {aggregateDate:'2026-09-02',capturedAt:'2026-09-02T15:00:00+09:00',products:{'a:1':{itemName:'Old A',shopName:'Alpha',shopCode:'a',itemUrl:'https://item.rakuten.co.jp/a/1/'},'b:1':{itemName:'Same B',shopName:'Beta',shopCode:'b'}}},
+    {aggregateDate:'2026-09-03',capturedAt:'2026-09-03T15:00:00+09:00',products:{'a:1':{itemName:'New A',shopName:'Alpha',shopCode:'a',itemUrl:'https://item.rakuten.co.jp/a/1/'},'b:1':{itemName:'Same B',shopName:'Beta',shopCode:'b'}}},
+    {aggregateDate:'2026-09-05',capturedAt:'2026-09-05T15:00:00+09:00',products:{'a:1':{itemName:'Newest A',shopName:'Alpha',shopCode:'a'}}}
+  ];
+  const rows=A.titleChangeRows(captures,'2026-09-03','2026-09-05');
+  assert.equal(rows.length,2);
+  assert.deepEqual(rows.map(r=>[r.changedDate,r.before,r.after,r.continuous]),[
+    ['2026-09-03','Old A','New A',true],
+    ['2026-09-05','New A','Newest A',false]
+  ]);
+  assert.equal(rows[0].shopName,'Alpha');
+  assert.deepEqual(A.titleChangeRows(captures,'bad','2026-09-05'),[]);
+});
 test('shop and price summaries deduplicate products without altering original rows',()=>{
   const category={id:'a',name:'Bra'};
   const rows=[{itemCode:'s:1',shopCode:'s',shopName:'Shop',rank:1,itemPrice:2500,change:2,category,promotionHints:['20%OFFクーポン'],pointRate:5},{itemCode:'s:1',shopCode:'s',shopName:'Shop',rank:3,itemPrice:2500,change:-1,category:{id:'b',name:'Inner'},promotionHints:['20%OFFクーポン'],pointRate:5}];

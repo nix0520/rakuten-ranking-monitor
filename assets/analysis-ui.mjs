@@ -5,6 +5,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   let notebook = A.readNotebook(globalThis.localStorage), currentRow = null, busy = false;
   let selectedShopKey = '';
   let shopOverviewSort = {key:'top10', direction:'desc'};
+  const titleProductCache = new Map();
   const filters = {group:'',tag:'',signal:'',min:'',max:''};
   const captures = () => state.archive?.length ? state.archive : state.history?.captures || [];
   const endDay = () => state.viewSnapshot?.day || state.latest?.aggregateDate;
@@ -136,6 +137,13 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const allChanges=rows.flatMap(r=>A.titleChanges(series(r)).map(c=>({r,c}))).sort((a,b)=>b.c.to.localeCompare(a.c.to));
     const titleDays=rows.flatMap(r=>series(r).filter(p=>p.title!=null).map(p=>p.day)).sort();
     const titleRange=titleDays.length ? titleDays[0]+' ～ '+titleDays.at(-1) : 'まだ記録なし';
+    const availableTitleDays=captures().filter(c=>c.products||c.productsFile).map(c=>c.aggregateDate).filter(day=>A.shiftDay(day,0)).sort();
+    const titleStart=$('#titleExportStart'),titleEnd=$('#titleExportEnd');
+    if(availableTitleDays.length){
+      titleStart.min=titleEnd.min=availableTitleDays[0];titleStart.max=titleEnd.max=availableTitleDays.at(-1);
+      if(!A.shiftDay(titleStart.value,0))titleStart.value=availableTitleDays[0];
+      if(!A.shiftDay(titleEnd.value,0))titleEnd.value=availableTitleDays.at(-1);
+    }
     $('#titleUpdates').innerHTML=table(['商品','观察日期','修改前','修改后'],allChanges.slice(0,30).map(({r,c})=>[rowLink(r),esc(c.from+' → '+c.to),esc(c.before),esc(c.after)]))+
       '<small>当前载入的标题记录范围：'+esc(titleRange)+'。完整日榜会保存当天标题；超过30天后随日榜进入长期归档。载入更早归档后，这里的范围和修改记录会一起扩展。上线前没有保存的标题无法补回。</small>';
     const groups=[...new Set(Object.values(notebook.products).map(p=>p.group).filter(Boolean))];
@@ -227,6 +235,40 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'}));
     const a=document.createElement('a');a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);
   }
+  function csvCell(value) {
+    if(typeof value==='string' && /^[=+\-@\t\r]/.test(value))value="'"+value;
+    return '"'+String(value??'').replaceAll('"','""')+'"';
+  }
+  async function exportTitleChanges() {
+    const start=$('#titleExportStart').value,end=$('#titleExportEnd').value,status=$('#titleExportStatus');
+    if(!A.shiftDay(start,0)||!A.shiftDay(end,0)||start>end){status.textContent='请选择有效的修改日期范围。';return;}
+    if(busy)return;busy=true;status.textContent='正在读取每天的商品标题资料…';
+    try{
+      const source=captures().filter(c=>c.aggregateDate&&c.aggregateDate<=end);
+      const hydrated=[];
+      for(let i=0;i<source.length;i+=3){
+        const batch=await Promise.all(source.slice(i,i+3).map(async capture=>{
+          if(capture.products)return capture;
+          if(!/^(history-products|archive\/products)\/\d{4}-\d{2}-\d{2}\.json$/.test(capture.productsFile||''))return capture;
+          if(!titleProductCache.has(capture.productsFile)){
+            const response=await fetch('data/'+capture.productsFile,{cache:'no-store'});
+            if(!response.ok)throw Error('商品标题资料读取失败：'+capture.aggregateDate);
+            const payload=await response.json();
+            if(!payload.products||typeof payload.products!=='object'||Array.isArray(payload.products))throw Error('商品标题资料格式错误：'+capture.aggregateDate);
+            titleProductCache.set(capture.productsFile,payload.products);
+          }
+          return {...capture,products:titleProductCache.get(capture.productsFile)};
+        }));
+        hydrated.push(...batch);status.textContent='正在读取商品标题资料：'+Math.min(i+3,source.length)+'/'+source.length+'日';
+      }
+      const rows=A.titleChangeRows(hydrated,start,end);
+      const headers=['店铺名','店铺代码','商品编号','商品URL','修改日期（集计日）','上次观察日期','连续两日观察','修改前标题','修改后标题'];
+      const values=rows.map(r=>[r.shopName,r.shopCode,r.itemCode,r.itemUrl,r.changedDate,r.previousObservedDate,r.continuous?'是':'否（中间有缺测或未进榜）',r.before,r.after]);
+      const blob=new Blob(['\ufeff'+[headers,...values].map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+      const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='rakuten-title-changes-by-shop-'+start+'-'+end+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      status.textContent='已下载 '+rows.length+' 条标题修改记录（'+start+'～'+end+'）。CSV已按店铺名排序。';
+    }catch(e){status.textContent=e.message+'；没有生成不完整文件，请重试。';}finally{busy=false;}
+  }
   async function loadArchive() {
     const start=$('#archiveStart').value,end=$('#archiveEnd').value;
     if(!A.shiftDay(start,0)||!A.shiftDay(end,0)||start>end){$('#archiveStatus').textContent='请选择有效日期范围。';return;}
@@ -266,7 +308,12 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
         return;
       }
       const btn=event.target.closest('[data-analysis-detail]');
-      if(btn){const r=state.rows.find(r=>r.itemCode===btn.dataset.analysisDetail&&String(r.category.id)===btn.dataset.genre);if(r)openDetail(r);}
+      if(btn){
+        const r=shopRows().find(r=>r.itemCode===btn.dataset.analysisDetail&&String(r.category.id)===btn.dataset.genre);
+        if(r)openDetail(r);
+        else {btn.disabled=true;btn.textContent='历史资料不可用';}
+        return;
+      }
       const del=event.target.closest('[data-delete-event]');
       if(del){try{save({...notebook,events:notebook.events.filter((_,i)=>i!==Number(del.dataset.deleteEvent))});render();}catch{$('#calendarStatus').textContent='保存失败';}}
     });
@@ -283,6 +330,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#loadArchive').addEventListener('click',loadArchive);
     $('#exportAnalysis').addEventListener('click',()=>download('ranking-analysis-notes.json',notebook));
     $('#exportArchive').addEventListener('click',()=>download('ranking-loaded-history.json',{captures:captures()}));
+    $('#exportTitleChanges').addEventListener('click',exportTitleChanges);
     $('#importAnalysis').addEventListener('change',async e=>{
       try{
         const file=e.target.files?.[0];if(!file)return;
