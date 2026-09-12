@@ -2,7 +2,7 @@ import { WATCH_KEY, jstDay, dailySeries, couponPeriods, filterAndSort, readWatch
 import { archiveSnapshots, referenceProducts, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist as watchlistJson } from "./history-tools.mjs";
 import { createAnalysis } from "./analysis-ui.mjs";
 
-const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "", page: 1, pageSize: 50 };
+const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", shopQuery: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "", page: 1, pageSize: 50 };
 try { state.watchlist = readWatchlist(window.localStorage); } catch { /* Storage can be disabled. */ }
 const SAVED_VIEWS_KEY = "rakuten-ranking-saved-views-v1";
 let savedViews = [];
@@ -147,18 +147,42 @@ function movement(item) {
 
 function filteredRows() {
   const query = state.query.trim().toLocaleLowerCase("ja");
+  const shopQuery = state.shopQuery.trim().toLocaleLowerCase("ja");
   const rows = selectedCategories().flatMap((category) =>
     (state.latest.rankings?.[String(category.id)] || []).map((item) => ({ ...item, category }))
   ).filter(row => Number.isFinite(row.rank) || state.movement === "exited" || state.mode === "daily" && (state.selectedDay !== "latest" || Boolean(state.compareDay)))
   .filter(row => promotionMatches(row, state.promotionFilter))
   .filter(({ itemName, itemCode, shopName, catchcopy, promotionHints }) =>
     !query || `${itemName} ${itemCode} ${shopName} ${catchcopy || ""} ${(promotionHints || []).join(" ")}`.toLocaleLowerCase("ja").includes(query)
+  ).filter(({ itemCode, shopCode, shopName }) =>
+    !shopQuery || `${shopName || ""} ${shopCode || ""} ${String(itemCode || "").split(":")[0]}`.toLocaleLowerCase("ja").includes(shopQuery)
   );
   return filterAndSort(rows, state.movement, state.watchedOnly, state.watchlist).filter(analysis.matches);
 }
 
 function visibleRows(rows) {
-  return state.query.trim() || state.watchedOnly || state.rankScope === "all" ? rows : rows.filter((row) => (row.rank ?? row.previousRank ?? Infinity) <= 100);
+  return state.query.trim() || state.shopQuery.trim() || state.watchedOnly || state.rankScope === "all" ? rows : rows.filter((row) => (row.rank ?? row.previousRank ?? Infinity) <= 100);
+}
+
+function renderShopSearchOptions() {
+  const shops = new Map();
+  selectedCategories().forEach((category) => {
+    (state.latest?.rankings?.[String(category.id)] || []).forEach((item) => {
+      const code = item.shopCode || String(item.itemCode || "").split(":")[0];
+      const name = item.shopName || code;
+      if (!name && !code) return;
+      const key = `${name}\u0000${code}`;
+      if (!shops.has(key)) shops.set(key, { name, code });
+    });
+  });
+  const options = [...shops.values()].sort((left, right) =>
+    left.name.localeCompare(right.name, "ja") || left.code.localeCompare(right.code, "ja")
+  );
+  $("#shopSearchOptions").innerHTML = options.flatMap(({ name, code }) => {
+    const values = [`<option value="${escapeHtml(name)}" label="${escapeHtml(code)}"></option>`];
+    if (code && code !== name) values.push(`<option value="${escapeHtml(code)}" label="${escapeHtml(name)}"></option>`);
+    return values;
+  }).join("");
 }
 
 function renderSavedViews() {
@@ -166,17 +190,17 @@ function renderSavedViews() {
 }
 
 function currentViewFilters() {
-  return {mode:state.mode,group:state.group,category:state.category,query:state.query,days:state.days,movement:state.movement,promotionFilter:state.promotionFilter,watchedOnly:state.watchedOnly,rankScope:state.rankScope};
+  return {mode:state.mode,group:state.group,category:state.category,query:state.query,shopQuery:state.shopQuery,days:state.days,movement:state.movement,promotionFilter:state.promotionFilter,watchedOnly:state.watchedOnly,rankScope:state.rankScope};
 }
 
 async function applySavedView(index) {
   const view=savedViews[Number(index)];if(!view)return;
   const f=view.filters||{};
   if(["daily","realtime"].includes(f.mode)&&f.mode!==state.mode)await selectMode(f.mode);
-  state.group=["bra","shorts"].includes(f.group)?f.group:"bra";state.category=String(f.category||"all");state.query=String(f.query||"");state.days=[7,30].includes(Number(f.days))?Number(f.days):7;
+  state.group=["bra","shorts"].includes(f.group)?f.group:"bra";state.category=String(f.category||"all");state.query=String(f.query||"");state.shopQuery=String(f.shopQuery||"");state.days=[7,30].includes(Number(f.days))?Number(f.days):7;
   state.movement=["all","up","down","new","exited"].includes(f.movement)?f.movement:"all";state.promotionFilter=String(f.promotionFilter||"all");state.watchedOnly=Boolean(f.watchedOnly);state.rankScope=f.rankScope==="all"?"all":"100";state.page=1;
   document.querySelectorAll("[data-group]").forEach(b=>b.classList.toggle("active",b.dataset.group===state.group));document.querySelectorAll("[data-days]").forEach(b=>b.classList.toggle("active",Number(b.dataset.days)===state.days));
-  $("#searchInput").value=state.query;$("#watchedOnly").checked=state.watchedOnly;$("#promotionFilter").value=state.promotionFilter;updateCategorySelect();render();
+  $("#searchInput").value=state.query;$("#shopSearchInput").value=state.shopQuery;$("#watchedOnly").checked=state.watchedOnly;$("#promotionFilter").value=state.promotionFilter;updateCategorySelect();render();
   $("#savedViewStatus").textContent=`已载入“${view.name}”。`;
 }
 
@@ -357,6 +381,7 @@ function renderHealth() {
 function render() {
   renderHistoryControls(); renderHealth();
   renderKeywords();
+  renderShopSearchOptions();
   state.rows = visibleRows(filteredRows());
   const pages=Math.max(1,Math.ceil(state.rows.length/state.pageSize));state.page=Math.min(Math.max(1,state.page),pages);
   const pageRows=state.rows.slice((state.page-1)*state.pageSize,state.page*state.pageSize);
@@ -634,6 +659,7 @@ function bindEvents() {
   }));
   $("#categorySelect").addEventListener("change", (event) => { state.category = event.target.value; state.page=1; render(); });
   $("#searchInput").addEventListener("input", (event) => { state.query = event.target.value; state.page=1; render(); });
+  $("#shopSearchInput").addEventListener("input", (event) => { state.shopQuery = event.target.value; state.page=1; render(); });
   $("#keywordCloud").addEventListener("click", (event) => {
     const button = event.target.closest("[data-keyword]");
     if (!button) return;

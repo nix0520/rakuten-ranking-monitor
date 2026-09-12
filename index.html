@@ -64,6 +64,11 @@
         <span>商品・ショップ検索</span>
         <input id="searchInput" type="search" placeholder="商品名、商品コード、ショップ名" autocomplete="off">
       </label>
+      <label class="shop-search-field">
+        <span>店铺搜索</span>
+        <input id="shopSearchInput" type="search" list="shopSearchOptions" placeholder="店铺名、店铺代码" autocomplete="off">
+        <datalist id="shopSearchOptions"></datalist>
+      </label>
       <div class="segmented compact" role="group" aria-label="トレンド期間">
         <button class="segment active" data-days="7" type="button">7日</button>
         <button class="segment" data-days="30" type="button">30日</button>
@@ -122,7 +127,10 @@
       <details open><summary>竞品店铺总览</summary><div id="shopOverview"></div></details>
       <details id="shop-analysis-section" open><summary>单店深度分析</summary>
         <p>基于公开排行榜记录判断店铺的排名覆盖、主推款、促销节奏和评论变化。真实销量与准确库存不是公开数据，不会虚构。</p>
-        <div class="analysis-controls"><label>选择店铺<select id="shopAnalysisSelect"><option value="">暂无店铺</option></select></label></div>
+        <div class="analysis-controls">
+          <label>搜索店铺<input id="shopAnalysisSearch" type="search" placeholder="店铺名、店铺代码" autocomplete="off"></label>
+          <label>选择店铺<select id="shopAnalysisSelect"><option value="">暂无店铺</option></select></label>
+        </div>
         <div id="shopAnalysis"></div>
       </details>
       <details open><summary>重点店铺长期趋势</summary><p>关注店铺后，按保存日榜统计上榜商品数和前10商品数。只使用公开榜单，不代表销量。</p><div id="watchedShopTrends"></div></details>

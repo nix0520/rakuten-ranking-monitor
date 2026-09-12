@@ -73,7 +73,7 @@ main { max-width: 1420px; margin: 0 auto; padding: 0 34px 40px; }
 
 .control-panel {
   position: sticky; top: 64px; z-index: 10;
-  display: grid; grid-template-columns: auto minmax(210px, .8fr) minmax(280px, 1.4fr) auto auto;
+  display: grid; grid-template-columns: auto minmax(190px, .75fr) minmax(250px, 1.2fr) minmax(190px, .8fr) auto auto;
   gap: 12px; align-items: end;
   padding: 14px;
   background: rgba(255,255,255,.92); backdrop-filter: blur(16px);
@@ -213,7 +213,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 @media (max-width: 1000px) {
   .summary { grid-template-columns: repeat(2, 1fr); }
   .control-panel { position: static; grid-template-columns: 1fr 1fr; }
-  .search-field { grid-column: 1 / -1; }
+  .search-field, .shop-search-field { grid-column: 1 / -1; }
   th:nth-child(3), td:nth-child(3) { display: none; }
   th:nth-child(2) { width: 44%; }
 }
@@ -223,7 +223,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
   .summary { gap: 8px; }
   .summary article { padding: 14px; }
   .control-panel { grid-template-columns: 1fr; }
-  .search-field { grid-column: auto; }
+  .search-field, .shop-search-field { grid-column: auto; }
   .keyword-panel { padding: 15px; }
   .keyword-heading { align-items: start; flex-direction: column; gap: 5px; }
   .keyword-scope { white-space: normal; }
