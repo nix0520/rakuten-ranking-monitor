@@ -4,6 +4,7 @@ import { snapshotRows } from './history-tools.mjs';
 export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatStamp, sparkline}) {
   let notebook = A.readNotebook(globalThis.localStorage), currentRow = null, busy = false;
   let selectedShopKey = '';
+  let shopAnalysisQuery = '';
   let shopOverviewSort = {key:'top10', direction:'desc'};
   const titleProductCache = new Map();
   const SHOP_WATCH_KEY='rakuten-ranking-shop-watch-v1', ALERT_KEY='rakuten-ranking-alert-settings-v1';
@@ -92,11 +93,13 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#shopOverview').innerHTML='<div class="analysis-scroll"><table class="analysis-table"><thead><tr>'+headings+'</tr></thead><tbody>'+body+'</tbody></table></div><small>表头可点击切换升序/降序。覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
   }
   function renderShopAnalysis(rows) {
-    const shops=A.shopOverview(rows), select=$('#shopAnalysisSelect');
+    const allShops=A.shopOverview(rows), query=shopAnalysisQuery.trim().toLocaleLowerCase('ja');
+    const shops=query ? allShops.filter(shop=>`${shop.name} ${shop.key}`.toLocaleLowerCase('ja').includes(query)) : allShops;
+    const select=$('#shopAnalysisSelect');
     if(!shops.some(s=>s.key===selectedShopKey))selectedShopKey=shops[0]?.key||'';
     select.innerHTML=shops.length?shops.map(s=>'<option value="'+esc(s.key)+'"'+(s.key===selectedShopKey?' selected':'')+'>'+esc(s.name+' · '+s.items+'商品')+'</option>').join(''):'<option value="">暂无店铺</option>';
     const profile=A.shopProfile(rows,selectedShopKey,shopHistory);
-    if(!profile){$('#shopAnalysis').innerHTML='<p>当前集计日没有可分析的店铺。</p>';return;}
+    if(!profile){$('#shopAnalysis').innerHTML='<p>'+(query?'没有匹配“'+esc(shopAnalysisQuery.trim())+'”的店铺，请更换关键词。':'当前集计日没有可分析的店铺。')+'</p>';return;}
     const shopUrl=safeUrl(profile.url), heading=shopUrl?'<a href="'+shopUrl+'" target="_blank" rel="noopener noreferrer">'+esc(profile.name)+'</a>':esc(profile.name);
     const summary=[['上榜商品',profile.itemCount],['覆盖类目',profile.categoryCount],['前10名',profile.top10],['前30名',profile.top30],['前100名',profile.top100],['上涨商品',profile.rising],['新进榜',profile.entered],['有促销线索',profile.promoted]];
     const products=profile.products.slice().sort((a,b)=>b.heat.score-a.heat.score||a.product.bestRank-b.product.bestRank);
@@ -360,6 +363,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     });
     $('#drawMultiTrend').addEventListener('click',compareProducts);
     $('#shopAnalysisSelect').addEventListener('change',event=>{selectedShopKey=event.target.value;render();});
+    $('#shopAnalysisSearch').addEventListener('input',event=>{shopAnalysisQuery=event.target.value;renderShopAnalysis(shopRows());});
     $('#compareShops').addEventListener('click',renderShopComparison);
     $('#loadArchive').addEventListener('click',loadArchive);
     $('#exportAnalysis').addEventListener('click',()=>download('ranking-analysis-notes.json',notebook));

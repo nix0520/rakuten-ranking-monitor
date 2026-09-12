@@ -65,6 +65,21 @@ test('page templates escape titles and render favorite and history buttons', () 
   assert.equal(a.element('#rolloverPanel').hidden, true);
 });
 
+test('dedicated shop search filters by shop name or code and is saved with the view', () => {
+  const a = app();
+  a.run(`state.latest.rankings[1] = [
+    {itemCode:'alpha:1',shopCode:'alpha',shopName:'Alpha Store',itemName:'Bra A',rank:150},
+    {itemCode:'beta:1',shopCode:'beta',shopName:'Beta Store',itemName:'Bra B',rank:2}
+  ]; bindEvents(); render();`);
+  assert.match(a.element('#shopSearchOptions').innerHTML, /Alpha Store/);
+  a.element('#shopSearchInput').handlers.input({target:{value:'Alpha'}});
+  assert.equal(a.run('state.rows.length'),1);
+  assert.equal(a.run('state.rows[0].itemCode'),'alpha:1');
+  assert.equal(a.run('currentViewFilters().shopQuery'),'Alpha');
+  a.element('#shopSearchInput').handlers.input({target:{value:'beta'}});
+  assert.equal(a.run('state.rows[0].itemCode'),'beta:1');
+});
+
 test('shop overview headers toggle ascending and descending sorting', async () => {
   const a = app();
   await a.run(`state.dailyLatest = {aggregateDate:'2026-09-08',generatedAt:'2026-09-08T15:00:00+09:00',categories:[{id:1,group:'bra',name:'Bra'}],rankings:{1:[
@@ -99,6 +114,21 @@ test('shop analysis history opens for a product outside the current category fil
   panel.handlers.click({target:{closest:selector=>selector==='[data-analysis-detail]'?{dataset:{analysisDetail:'s:2',genre:'2'}}:null}});
   assert.equal(a.element('#productDialog').open,true);
   assert.equal(a.element('#detailTitle').textContent,'Filtered product');
+});
+
+test('shop analysis search filters its selector by shop name or code', async () => {
+  const a = app();
+  await a.run(`state.dailyLatest = {aggregateDate:'2026-09-08',generatedAt:'2026-09-08T15:00:00+09:00',categories:[{id:1,group:'bra',name:'Bra'}],rankings:{1:[
+    {itemCode:'alpha:1',shopCode:'alpha',shopName:'Alpha Store',itemName:'A',rank:1},
+    {itemCode:'beta:1',shopCode:'beta',shopName:'Beta Store',itemName:'B',rank:2}
+  ]}}; bindEvents(); refreshView();`);
+  assert.match(a.element('#shopAnalysisSelect').innerHTML,/Alpha Store/);
+  assert.match(a.element('#shopAnalysisSelect').innerHTML,/Beta Store/);
+  a.element('#shopAnalysisSearch').handlers.input({target:{value:'beta'}});
+  assert.doesNotMatch(a.element('#shopAnalysisSelect').innerHTML,/Alpha Store/);
+  assert.match(a.element('#shopAnalysisSelect').innerHTML,/Beta Store/);
+  a.element('#shopAnalysisSearch').handlers.input({target:{value:'missing'}});
+  assert.match(a.element('#shopAnalysis').innerHTML,/没有匹配/);
 });
 
 test('favorite click persists, only-watched filter works, manager removes absent entries', () => {

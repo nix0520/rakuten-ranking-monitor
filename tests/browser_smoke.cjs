@@ -43,6 +43,14 @@ const server=http.createServer((req,res)=>{
     await page.locator('#rankingBody tr').first().waitFor();
     await page.selectOption('#categorySelect',genre);
     assert.equal(await page.locator('#rankingBody tr').count(),2);
+    assert.equal(await page.locator('#shopSearchInput').count(),1);
+    await page.fill('#shopSearchInput','Test shop');
+    assert.equal(await page.locator('#rankingBody tr').count(),2);
+    await page.fill('#shopSearchInput','missing shop');
+    assert.equal(await page.locator('#rankingBody tr').count(),0);
+    await page.fill('#shopSearchInput','s');
+    assert.equal(await page.locator('#rankingBody tr').count(),2);
+    await page.fill('#shopSearchInput','');
     assert.deepEqual(await page.locator('#pageSize option').allTextContents(),['50','100','200','1000']);
     await page.selectOption('#pageSize','1000');
     assert.equal(await page.inputValue('#pageSize'),'1000');
@@ -51,6 +59,11 @@ const server=http.createServer((req,res)=>{
     assert.equal(await page.locator('#mergedProducts .analysis-product').count(),2);
     assert.equal(await page.locator('#dailyDigest .analysis-product img').count()>0,true);
     assert.equal(await page.locator('#shopAnalysisSelect option').count()>0,true);
+    await page.fill('#shopAnalysisSearch','Test shop');
+    assert.equal(await page.locator('#shopAnalysisSelect option').count(),1);
+    await page.fill('#shopAnalysisSearch','not found');
+    assert.match(await page.locator('#shopAnalysis').innerText(),/没有匹配/);
+    await page.fill('#shopAnalysisSearch','');
     assert.match(await page.locator('#shopAnalysis').innerText(),/推测的商品角色与热度/);
     assert.match(await page.locator('#shopAnalysis').innerText(),/真实销量、订单数和准确库存不公开/);
     await page.locator('#shopAnalysis [data-watch-shop]').click();
