@@ -98,3 +98,42 @@ test('notebook validation strips unsafe evidence and round-trips groups notes ta
   assert.equal(A.cleanNotebook(JSON.parse(JSON.stringify(clean))).events.length,1);
   assert.throws(()=>A.cleanNotebook({version:2,products:{}}));
 });
+
+test('priority alerts respect thresholds, prefer favorites and deduplicate products',()=>{
+  const category={id:'110854',name:'ブラジャー'};
+  const before=[{itemCode:'s:1',rank:80,reviewCount:100,pointRate:1,category}];
+  const rows=[
+    {itemCode:'s:1',shopName:'Shop',rank:5,previousRank:80,change:75,reviewCount:125,pointRate:10,pointChange:9,itemName:'30%OFFクーポン',promotionHints:['30%OFFクーポン'],category},
+    {itemCode:'t:1',shopName:'Other',rank:20,previousRank:100,change:80,reviewCount:10,pointRate:1,itemName:'通常商品',promotionHints:[],category}
+  ];
+  const alerts=A.priorityAlerts(rows,before,new Set(['s:1']),{rankJump:50,pointRate:10,couponRate:30});
+  assert.equal(alerts[0].row.itemCode,'s:1');
+  assert.equal(alerts.some(a=>a.type==='进入前10'&&a.row.itemCode==='s:1'),true);
+  assert.equal(alerts.some(a=>a.type==='大额优惠券'&&a.message.includes('30%')),true);
+  assert.equal(new Set(alerts.map(a=>a.type+'|'+a.row.itemCode)).size,alerts.length);
+});
+
+test('cross-category consolidation keeps the best rank and every category',()=>{
+  const rows=[
+    {itemCode:'s:1',rank:12,category:{id:'a',name:'Bra'},itemName:'A'},
+    {itemCode:'s:1',rank:3,category:{id:'b',name:'Inner'},itemName:'A'},
+    {itemCode:'t:1',rank:2,category:{id:'a',name:'Bra'},itemName:'B'}
+  ];
+  const merged=A.consolidateProducts(rows);
+  assert.equal(merged.length,2);
+  const item=merged.find(r=>r.itemCode==='s:1');
+  assert.equal(item.bestRank,3);
+  assert.deepEqual(item.categoryNames,['Bra','Inner']);
+});
+
+test('watched shop trend deduplicates products across genres for each aggregate day',()=>{
+  const captures=[
+    {aggregateDate:'2026-09-01',capturedAt:'2026-09-01T15:00:00+09:00',genres:{a:{'s:1':8,'s:2':50},b:{'s:1':3,'x:1':1}}},
+    {aggregateDate:'2026-09-02',capturedAt:'2026-09-02T15:00:00+09:00',genres:{a:{'s:1':12},b:{'s:3':9}}}
+  ];
+  const points=A.watchedShopTrend(captures,['s']).get('s');
+  assert.deepEqual(points.map(p=>[p.day,p.items,p.top10,p.top100]),[
+    ['2026-09-01',2,1,2],
+    ['2026-09-02',2,1,2]
+  ]);
+});

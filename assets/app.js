@@ -2,8 +2,11 @@ import { WATCH_KEY, jstDay, dailySeries, couponPeriods, filterAndSort, readWatch
 import { archiveSnapshots, referenceProducts, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist as watchlistJson } from "./history-tools.mjs";
 import { createAnalysis } from "./analysis-ui.mjs";
 
-const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "" };
+const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "", page: 1, pageSize: 50 };
 try { state.watchlist = readWatchlist(window.localStorage); } catch { /* Storage can be disabled. */ }
+const SAVED_VIEWS_KEY = "rakuten-ranking-saved-views-v1";
+let savedViews = [];
+try { const value=JSON.parse(window.localStorage.getItem(SAVED_VIEWS_KEY));if(Array.isArray(value))savedViews=value.filter(v=>v&&v.name&&v.filters).slice(0,30); } catch { /* Ignore invalid local preferences. */ }
 const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -158,6 +161,25 @@ function visibleRows(rows) {
   return state.query.trim() || state.watchedOnly || state.rankScope === "all" ? rows : rows.filter((row) => (row.rank ?? row.previousRank ?? Infinity) <= 100);
 }
 
+function renderSavedViews() {
+  $("#savedViewSelect").innerHTML='<option value="">选择已保存方案</option>'+savedViews.map((v,i)=>`<option value="${i}">${escapeHtml(v.name)}</option>`).join("");
+}
+
+function currentViewFilters() {
+  return {mode:state.mode,group:state.group,category:state.category,query:state.query,days:state.days,movement:state.movement,promotionFilter:state.promotionFilter,watchedOnly:state.watchedOnly,rankScope:state.rankScope};
+}
+
+async function applySavedView(index) {
+  const view=savedViews[Number(index)];if(!view)return;
+  const f=view.filters||{};
+  if(["daily","realtime"].includes(f.mode)&&f.mode!==state.mode)await selectMode(f.mode);
+  state.group=["bra","shorts"].includes(f.group)?f.group:"bra";state.category=String(f.category||"all");state.query=String(f.query||"");state.days=[7,30].includes(Number(f.days))?Number(f.days):7;
+  state.movement=["all","up","down","new","exited"].includes(f.movement)?f.movement:"all";state.promotionFilter=String(f.promotionFilter||"all");state.watchedOnly=Boolean(f.watchedOnly);state.rankScope=f.rankScope==="all"?"all":"100";state.page=1;
+  document.querySelectorAll("[data-group]").forEach(b=>b.classList.toggle("active",b.dataset.group===state.group));document.querySelectorAll("[data-days]").forEach(b=>b.classList.toggle("active",Number(b.dataset.days)===state.days));
+  $("#searchInput").value=state.query;$("#watchedOnly").checked=state.watchedOnly;$("#promotionFilter").value=state.promotionFilter;updateCategorySelect();render();
+  $("#savedViewStatus").textContent=`已载入“${view.name}”。`;
+}
+
 function safeUrl(value) {
   try { const url = new URL(value); return ["http:", "https:"].includes(url.protocol) ? escapeHtml(url.href) : ""; } catch { return ""; }
 }
@@ -211,7 +233,20 @@ function updateCategorySelect() {
 }
 
 const productSnapshots = new Map();
+const fullHistorySnapshots = new Map();
 let viewRequest = 0;
+async function hydrateFullHistory(snapshot) {
+  if (!snapshot?.fullHistoryFile) return snapshot;
+  if (!/^history\/\d{4}-\d{2}-\d{2}\.json$/.test(snapshot.fullHistoryFile)) throw Error('invalid history path');
+  if (!fullHistorySnapshots.has(snapshot.fullHistoryFile)) {
+    const response = await fetch(`data/${snapshot.fullHistoryFile}`, { cache: "no-store" });
+    if (!response.ok) throw Error('missing full history');
+    const payload = await response.json();
+    if (!payload.genres || !payload.capturedAt) throw Error('invalid full history');
+    fullHistorySnapshots.set(snapshot.fullHistoryFile, payload);
+  }
+  return {...snapshot,...fullHistorySnapshots.get(snapshot.fullHistoryFile)};
+}
 async function refreshView() {
   const request = ++viewRequest;
   state.historyWarning = "";
@@ -227,6 +262,16 @@ async function refreshView() {
       state.selectedDay = "latest"; target = state.archive.find(s => s.key === latestKey);
     }
     if (state.compareDay && !previousSnapshot(state.archive, target, state.compareDay)) state.compareDay = "";
+    let baseline = previousSnapshot(state.archive, target, state.compareDay);
+    if ((state.selectedDay !== "latest" || state.rankScope === "all") && target?.fullHistoryFile) {
+      state.viewLoading = true;
+      try { target = await hydrateFullHistory(target); }
+      catch { if (request === viewRequest) state.historyWarning = "選択日の完全履歴を取得できません。軽量履歴で表示します。"; }
+    }
+    if (state.rankScope === "all" && baseline?.fullHistoryFile) {
+      try { baseline = await hydrateFullHistory(baseline); }
+      catch { if (request === viewRequest) state.historyWarning = "比較日の完全履歴を取得できません。価格・ポイントの未記録値は補完しません。"; }
+    }
     if (target?.productsFile && !target.products) {
       state.viewLoading = true;
       $("#historyNote").textContent = "選択日の商品資料を読み込み中…";
@@ -247,7 +292,7 @@ async function refreshView() {
     }
     if (request !== viewRequest) return;
     state.viewLoading = false; state.viewSnapshot = target || null;
-    state.baselineSnapshot = previousSnapshot(state.archive, target, state.compareDay);
+    state.baselineSnapshot = baseline;
     const categories = state.dailyLatest?.categories || [];
     const rows = snapshotRows(target, state.baselineSnapshot, categories, referenceProducts(state.dailyLatest, state.realtimeLatest), true);
     const rankings = {};
@@ -313,7 +358,10 @@ function render() {
   renderHistoryControls(); renderHealth();
   renderKeywords();
   state.rows = visibleRows(filteredRows());
-  $("#rankingBody").innerHTML = state.rows.map(rowTemplate).join("");
+  const pages=Math.max(1,Math.ceil(state.rows.length/state.pageSize));state.page=Math.min(Math.max(1,state.page),pages);
+  const pageRows=state.rows.slice((state.page-1)*state.pageSize,state.page*state.pageSize);
+  $("#rankingBody").innerHTML = pageRows.map(rowTemplate).join("");
+  $("#pagination").innerHTML=state.rows.length?`<button type="button" data-page="${state.page-1}" ${state.page<=1?'disabled':''}>上一页</button><strong>第${state.page}/${pages}页 · 共${state.rows.length.toLocaleString("ja-JP")}条</strong><button type="button" data-page="${state.page+1}" ${state.page>=pages?'disabled':''}>下一页</button><label>每页<select id="pageSize"><option value="50" ${state.pageSize===50?'selected':''}>50</option><option value="100" ${state.pageSize===100?'selected':''}>100</option><option value="200" ${state.pageSize===200?'selected':''}>200</option></select></label>`:"";
   $("#emptyState").hidden = state.rows.length > 0;
   const health = dataHealth(state.dailyLatest, state.realtimeLatest, state.updateLog);
   const selectedMissing = state.mode === "daily" && state.viewSnapshot?.day === health.publishedDay
@@ -517,12 +565,13 @@ async function loadHistory(index) {
     if (entry.genres) return entry;
     if (!entry.file) return null;
     try {
-      if (!/^history\/\d{4}-\d{2}-\d{2}\.json$/.test(entry.file)) throw Error('invalid history path');
-      const response = await fetch(`data/${entry.file}`, { cache: "no-store" });
+      const path = entry.trendFile || entry.file;
+      if (!/^(history|history-trends)\/\d{4}-\d{2}-\d{2}\.json$/.test(path)) throw Error('invalid history path');
+      const response = await fetch(`data/${path}`, { cache: "no-store" });
       if (!response.ok) throw Error('missing history');
       const capture = await response.json();
       if (!capture.genres || !capture.capturedAt) throw Error('invalid history');
-      return capture;
+      return {...capture, fullHistoryFile: entry.file};
     } catch { failures.push(entry.file); return null; }
   }));
   return { captures: captures.filter(Boolean), failures };
@@ -532,7 +581,7 @@ function bindEvents() {
   analysis.bind(openDetail);
   $("#historyDate").addEventListener("change", event => { state.selectedDay = event.target.value; refreshView(); });
   $("#compareDate").addEventListener("change", event => { state.compareDay = event.target.value; refreshView(); });
-  $("#rankScope").addEventListener("change", event => { state.rankScope = event.target.value; render(); });
+  $("#rankScope").addEventListener("change", event => { state.rankScope = event.target.value; state.page=1; refreshView(); });
   $("#promotionFilter").addEventListener("change", event => { state.promotionFilter = event.target.value; render(); });
   $("#reloadData").addEventListener("click", () => window.location.reload());
   $("#exportWatchlist").addEventListener("click", exportFavorites);
@@ -577,14 +626,14 @@ function bindEvents() {
   document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.addEventListener("click", () => selectMode(button.dataset.rankingMode)));
   document.querySelectorAll("[data-group]").forEach((button) => button.addEventListener("click", () => {
     document.querySelectorAll("[data-group]").forEach((item) => item.classList.toggle("active", item === button));
-    state.group = button.dataset.group; state.category = "all"; updateCategorySelect(); render();
+    state.group = button.dataset.group; state.category = "all"; state.page=1; updateCategorySelect(); render();
   }));
   document.querySelectorAll("[data-days]").forEach((button) => button.addEventListener("click", () => {
     document.querySelectorAll("[data-days]").forEach((item) => item.classList.toggle("active", item === button));
-    state.days = Number(button.dataset.days); render();
+    state.days = Number(button.dataset.days); state.page=1; render();
   }));
-  $("#categorySelect").addEventListener("change", (event) => { state.category = event.target.value; render(); });
-  $("#searchInput").addEventListener("input", (event) => { state.query = event.target.value; render(); });
+  $("#categorySelect").addEventListener("change", (event) => { state.category = event.target.value; state.page=1; render(); });
+  $("#searchInput").addEventListener("input", (event) => { state.query = event.target.value; state.page=1; render(); });
   $("#keywordCloud").addEventListener("click", (event) => {
     const button = event.target.closest("[data-keyword]");
     if (!button) return;
@@ -594,6 +643,12 @@ function bindEvents() {
     render();
   });
   $("#csvButton").addEventListener("click", exportCsv);
+  $("#pagination").addEventListener("click",event=>{const b=event.target.closest("[data-page]");if(!b||b.disabled)return;state.page=Number(b.dataset.page);render();$("#ranking-section").scrollIntoView({block:"start"});});
+  $("#pagination").addEventListener("change",event=>{if(event.target.id!=="pageSize")return;state.pageSize=Number(event.target.value);state.page=1;render();});
+  $("#savedViewSelect").addEventListener("change",event=>applySavedView(event.target.value));
+  $("#saveView").addEventListener("click",()=>{const name=$("#savedViewName").value.trim();if(!name){$("#savedViewStatus").textContent="请输入方案名称。";return;}const entry={name:name.slice(0,40),filters:currentViewFilters()};const old=savedViews.findIndex(v=>v.name===entry.name);if(old>=0)savedViews[old]=entry;else savedViews.push(entry);savedViews=savedViews.slice(-30);localStorage.setItem(SAVED_VIEWS_KEY,JSON.stringify(savedViews));renderSavedViews();$("#savedViewStatus").textContent=`已保存“${entry.name}”。`;});
+  $("#deleteView").addEventListener("click",()=>{const i=Number($("#savedViewSelect").value);if(!Number.isInteger(i)||!savedViews[i]){$("#savedViewStatus").textContent="请先选择要删除的方案。";return;}const name=savedViews[i].name;savedViews.splice(i,1);localStorage.setItem(SAVED_VIEWS_KEY,JSON.stringify(savedViews));renderSavedViews();$("#savedViewStatus").textContent=`已删除“${name}”。`;});
+  renderSavedViews();
 }
 
 let publicationCheckRunning = false;
@@ -620,7 +675,7 @@ async function checkPublication() {
     const oldArchives = (state.history?.captures || []).filter(c=>c.productsFile?.startsWith("archive/"));
     history.captures = [...oldArchives,...history.captures];
     state.dailyLatest = latest; state.history = history; state.updateLog = log;
-    productSnapshots.clear();
+    productSnapshots.clear(); fullHistorySnapshots.clear();
     await refreshView();
     $("#autoRefreshStatus").textContent = latest.aggregateDate + " の完全日榜を自動読込しました（" + formatStamp(latest.generatedAt) + "）。選択中の履歴日・絞り込み条件は保持しています。";
   } catch {

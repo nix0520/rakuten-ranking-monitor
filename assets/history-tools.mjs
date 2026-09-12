@@ -71,7 +71,7 @@ export function snapshotRows(target, previous, categories, reference = {}, inclu
         isNew: status === 'entered', comparisonDate: allowed ? previous.day : null,
         targetDate: target.day, targetDateBasis: target.basis,
         itemName: info.itemName || `商品名未記録 (${code})`, itemUrl: info.itemUrl || '', imageUrl: info.imageUrl || '',
-        shopName: info.shopName || code.split(':')[0], shopUrl: info.shopUrl || '',
+        shopName: info.shopName || code.split(':')[0], shopCode: info.shopCode || code.split(':')[0], shopUrl: info.shopUrl || '',
         metadataBasis: own ? 'snapshot' : info.itemName ? 'reference' : 'missing',
         catchcopy: own?.catchcopy || '',
         reviewAverage: own ? numeric(own.reviewAverage) : null,

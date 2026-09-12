@@ -26,6 +26,10 @@ class RankingTests(unittest.TestCase):
             self.assertEqual(captures[1]["metrics"]["1"]["a"]["pointRate"], 5)
             self.assertNotIn("products", captures[1])
             self.assertEqual(captures[1]["productsFile"], "history-products/2026-08-31.json")
+            self.assertEqual(index["captures"][1]["trendFile"], "history-trends/2026-08-31.json")
+            trend = json.loads((output / index["captures"][1]["trendFile"]).read_text())
+            self.assertEqual(trend["genres"]["1"]["a"], 2)
+            self.assertEqual(trend["metrics"]["1"]["a"]["itemPrice"], 1200)
             products = json.loads((output / captures[1]["productsFile"]).read_text())
             self.assertIn("a", products["products"])
             rankings["1"][0]["itemPrice"] = 900
@@ -41,11 +45,28 @@ class RankingTests(unittest.TestCase):
             moment = datetime.fromisoformat("2026-08-01T20:30:00+09:00")
             index = fetch.update_history(output, [], rows, moment, "2026-08-01")
             old = output / "history-products/2026-08-01.json"
+            old_trend = output / "history-trends/2026-08-01.json"
             self.assertEqual(json.loads(old.read_text())["products"]["shop:a"]["itemName"], "Historical name")
+            self.assertTrue(old_trend.exists())
             captures = fetch.load_history_captures(output, index)
             fetch.update_history(output, captures, rows, moment + timedelta(days=31), "2026-09-01")
             self.assertFalse(old.exists())
+            self.assertFalse(old_trend.exists())
             self.assertTrue((output / "history-products/2026-09-01.json").exists())
+
+    def test_existing_history_gets_lightweight_index_on_next_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            rows = {"1": [{"itemCode": "shop:a", "rank": 2, "itemName": "A", "itemPrice": 1000}]}
+            moment = datetime.fromisoformat("2026-09-01T15:00:00+09:00")
+            index = fetch.update_history(output, [], rows, moment, "2026-09-01")
+            trend = output / index["captures"][0]["trendFile"]
+            trend.unlink()
+            del index["captures"][0]["trendFile"]
+            fetch.write_json(output / "history.json", index)
+            self.assertEqual(fetch.ensure_lightweight_history(output), 1)
+            self.assertTrue(trend.exists())
+            self.assertEqual(fetch.ensure_lightweight_history(output), 0)
 
     def test_api_request_treats_404_as_an_empty_ranking_page(self):
         def opener(request, timeout):
