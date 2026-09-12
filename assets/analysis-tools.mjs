@@ -61,6 +61,36 @@ export function titleChanges(series) {
   }
   return changes;
 }
+
+export function titleChangeRows(captures, start, end) {
+  if (!validDay(start) || !validDay(end) || start > end) return [];
+  const byDay = new Map();
+  for (const capture of [...(captures || [])].sort((a,b) => String(a.capturedAt || '').localeCompare(String(b.capturedAt || '')))) {
+    const day = validDay(capture.aggregateDate);
+    if (day && day <= end && capture.products && typeof capture.products === 'object') byDay.set(day, capture);
+  }
+  const previous = new Map(), changes = [];
+  for (const [day,capture] of [...byDay].sort(([a],[b]) => a.localeCompare(b))) {
+    for (const [itemCode,product] of Object.entries(capture.products || {})) {
+      const title = typeof product?.itemName === 'string' ? product.itemName.trim() : '';
+      if (!title) continue;
+      const prior = previous.get(itemCode);
+      if (day >= start && prior && prior.title !== title) changes.push({
+        shopName: product.shopName || prior.shopName || itemCode.split(':')[0],
+        shopCode: product.shopCode || prior.shopCode || itemCode.split(':')[0],
+        itemCode,
+        itemUrl: product.itemUrl || prior.itemUrl || '',
+        changedDate: day,
+        previousObservedDate: prior.day,
+        continuous: shiftDay(prior.day,1) === day,
+        before: prior.title,
+        after: title
+      });
+      previous.set(itemCode,{day,title,shopName:product.shopName,shopCode:product.shopCode,itemUrl:product.itemUrl});
+    }
+  }
+  return changes.sort((a,b) => String(a.shopName).localeCompare(String(b.shopName),'ja') || a.changedDate.localeCompare(b.changedDate) || a.itemCode.localeCompare(b.itemCode));
+}
 export function promotionTimeline(series) {
   const out=[];
   for(const p of series){
