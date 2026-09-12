@@ -683,10 +683,23 @@ def update_history(
 
     history_dir = output_dir / "history"
     history_dir.mkdir(parents=True, exist_ok=True)
+    trend_dir = output_dir / "history-trends"
+    trend_dir.mkdir(parents=True, exist_ok=True)
     for day, capture in sorted(by_date.items()):
         write_json(history_dir / f"{day}.json", capture)
+        # The dashboard needs every saved rank for trend lines, but only the
+        # usual top-100 metadata on startup. Full 1,000-rank snapshots remain
+        # available through ``file`` and are loaded only for a selected day.
+        write_json(trend_dir / f"{day}.json", lightweight_history_capture(capture))
 
     for path in history_dir.glob("*.json"):
+        try:
+            day = datetime.strptime(path.stem, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if day < cutoff_date or day > current_date:
+            path.unlink()
+    for path in trend_dir.glob("*.json"):
         try:
             day = datetime.strptime(path.stem, "%Y-%m-%d").date()
         except ValueError:
@@ -700,10 +713,63 @@ def update_history(
                 "date": day,
                 "capturedAt": capture["capturedAt"],
                 "file": f"history/{day}.json",
+                "trendFile": f"history-trends/{day}.json",
             }
             for day, capture in sorted(by_date.items())
         ]
     }
+
+
+def lightweight_history_capture(capture: dict[str, Any]) -> dict[str, Any]:
+    """Keep all ranks but only normal top-100 analysis fields for fast page startup."""
+    top_codes = {
+        code
+        for ranks in capture.get("genres", {}).values()
+        for code, rank in ranks.items()
+        if isinstance(rank, (int, float)) and rank <= 100
+    }
+    result = {
+        key: capture[key]
+        for key in ("capturedAt", "aggregateDate", "sourceBuildAt", "rankLimit", "couponHistoryVersion", "analysisVersion", "productsFile")
+        if key in capture
+    }
+    result["genres"] = capture.get("genres", {})
+    result["metrics"] = {
+        genre: {
+            code: metric for code, metric in values.items()
+            if code in top_codes and capture.get("genres", {}).get(genre, {}).get(code, 1001) <= 100
+        }
+        for genre, values in capture.get("metrics", {}).items()
+    }
+    result["analysisProducts"] = {
+        code: value for code, value in capture.get("analysisProducts", {}).items()
+        if code in top_codes
+    }
+    return result
+
+
+def ensure_lightweight_history(output_dir: Path) -> int:
+    """One-time compatible migration; the next scheduled run publishes compact history."""
+    index_path = output_dir / "history.json"
+    index = load_json(index_path, {"captures": []})
+    changed = 0
+    for entry in index.get("captures", []):
+        day, source = entry.get("date"), entry.get("file", "")
+        if not day or not re.fullmatch(r"history/\d{4}-\d{2}-\d{2}\.json", source):
+            continue
+        relative = f"history-trends/{day}.json"
+        target = output_dir / relative
+        if entry.get("trendFile") == relative and target.exists():
+            continue
+        capture = load_json(output_dir / source, {})
+        if not capture.get("genres") or not capture.get("capturedAt"):
+            continue
+        write_json(target, lightweight_history_capture(capture))
+        entry["trendFile"] = relative
+        changed += 1
+    if changed:
+        write_json(index_path, index)
+    return changed
 
 
 def fixture_request(path: Path) -> Callable[[int, int, str, str], dict[str, Any]]:
@@ -834,6 +900,9 @@ def _run(args: argparse.Namespace, expected_daily_date: str | None = None) -> No
     mode = args.mode
     if mode != "realtime":
         backfill_analysis(output_dir, load_json, write_json)
+    lightweight = ensure_lightweight_history(output_dir)
+    if lightweight:
+        print(f"Created lightweight history for {lightweight} saved daily snapshots.")
 
     if mode == "daily-probe":
         upgraded = backfill_coupon_history(output_dir)

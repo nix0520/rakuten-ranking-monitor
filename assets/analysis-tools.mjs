@@ -231,6 +231,61 @@ export function dailyDigest(rows, before) {
   }).filter(r=>r.messages.length).sort((a,b)=>Math.abs(b.change||0)-Math.abs(a.change||0));
 }
 
+export function priorityAlerts(rows, before = [], watchlist = new Set(), thresholds = {}) {
+  const jump = Number.isFinite(Number(thresholds.rankJump)) ? Number(thresholds.rankJump) : 50;
+  const pointRate = Number.isFinite(Number(thresholds.pointRate)) ? Number(thresholds.pointRate) : 10;
+  const couponRate = Number.isFinite(Number(thresholds.couponRate)) ? Number(thresholds.couponRate) : 30;
+  const prior = new Map(before.map(r=>[String(r.category.id)+'|'+r.itemCode,r]));
+  const alerts=[];
+  for(const row of rows.filter(r=>r.rank!=null)){
+    const old=prior.get(String(row.category.id)+'|'+row.itemCode), watched=watchlist.has(row.itemCode);
+    const base={row,watched,shopName:row.shopName||row.shopCode||'店铺未记录'};
+    if(Number.isFinite(row.change)&&row.change>=jump)alerts.push({...base,type:'排名大涨',level:'high',message:`${row.previousRank}→${row.rank}位（↑${row.change}）`,score:100+row.change});
+    if(row.rank<=10 && Number.isFinite(row.previousRank) && row.previousRank>10)alerts.push({...base,type:'进入前10',level:'high',message:`${row.previousRank}→${row.rank}位`,score:180-row.rank});
+    if(row.isNew)alerts.push({...base,type:'新进榜',level:'normal',message:`首次出现在已采集范围，当前${row.rank}位`,score:70-row.rank/100});
+    if(Number.isFinite(row.priceChange)&&row.priceChange<0)alerts.push({...base,type:'降价',level:'normal',message:`￥${row.previousPrice?.toLocaleString('ja-JP')}→￥${row.itemPrice?.toLocaleString('ja-JP')}`,score:85+Math.min(30,Math.abs(row.priceChange)/100)});
+    if(Number.isFinite(row.pointRate)&&row.pointRate>=pointRate&&(row.pointChange>0||old?.pointRate!==row.pointRate))alerts.push({...base,type:'积分提高',level:'high',message:`API积分${row.pointRate}倍`,score:110+row.pointRate});
+    const text=[row.itemName,...(row.promotionHints||[])].join(' ').normalize('NFKC');
+    const rates=[...text.matchAll(/(\d{1,2}(?:\.\d+)?)\s*%\s*(?:OFF)?/gi)].map(m=>Number(m[1]));
+    const best=rates.length?Math.max(...rates):null;
+    if(best!=null&&best>=couponRate&&/クーポン/.test(text))alerts.push({...base,type:'大额优惠券',level:'high',message:`标题/促销文字检测到${best}%券`,score:120+best});
+    if(old&&Number.isFinite(old.reviewCount)&&Number.isFinite(row.reviewCount)&&row.reviewCount-old.reviewCount>=20)alerts.push({...base,type:'评论增长',level:'normal',message:`评论+${row.reviewCount-old.reviewCount}`,score:60+Math.min(30,row.reviewCount-old.reviewCount)});
+  }
+  const dedup=new Map();
+  for(const alert of alerts){const key=alert.type+'|'+alert.row.itemCode;const existing=dedup.get(key);if(!existing||alert.score>existing.score)dedup.set(key,alert);}
+  return [...dedup.values()].sort((a,b)=>(b.watched-a.watched)||b.score-a.score||a.row.rank-b.row.rank);
+}
+
+export function consolidateProducts(rows) {
+  const map=new Map();
+  for(const row of rows.filter(r=>r.rank!=null)){
+    const current=map.get(row.itemCode)||{...row,bestRank:Infinity,categories:new Map(),ranks:[]};
+    current.categories.set(String(row.category.id),row.category.name);
+    current.ranks.push({genre:String(row.category.id),name:row.category.name,rank:row.rank,change:row.change});
+    if(row.rank<current.bestRank){Object.assign(current,row);current.bestRank=row.rank;}
+    map.set(row.itemCode,current);
+  }
+  return [...map.values()].map(p=>({...p,categoryCount:p.categories.size,categoryNames:[...p.categories.values()]})).sort((a,b)=>a.bestRank-b.bestRank||b.categoryCount-a.categoryCount);
+}
+
+export function watchedShopTrend(captures, shopCodes, end = '9999-12-31') {
+  const codes=new Set(shopCodes||[]), result=new Map([...codes].map(code=>[code,[]]));
+  const days=new Map();
+  for(const capture of [...(captures||[])].sort((a,b)=>String(a.capturedAt||'').localeCompare(String(b.capturedAt||'')))){
+    const day=validDay(capture.aggregateDate);if(day&&day<=end)days.set(day,capture);
+  }
+  for(const [day,capture] of [...days].sort(([a],[b])=>a.localeCompare(b))){
+    for(const shopCode of codes){
+      const items=new Map();
+      for(const ranks of Object.values(capture.genres||{}))for(const [itemCode,rank] of Object.entries(ranks||{})){
+        if(itemCode.startsWith(shopCode+':'))items.set(itemCode,Math.min(items.get(itemCode)??Infinity,rank));
+      }
+      result.get(shopCode).push({day,items:items.size,top10:[...items.values()].filter(rank=>rank<=10).length,top100:[...items.values()].filter(rank=>rank<=100).length});
+    }
+  }
+  return result;
+}
+
 export function coverageLabel(snapshot, genre, code) {
   const ranks=snapshot?.genres?.[genre];
   if(!ranks)return '類目未取得';

@@ -21,6 +21,9 @@
   </header>
 
   <main>
+    <nav class="section-nav" aria-label="页面功能导航">
+      <a href="#today-intelligence">今日重点</a><a href="#ranking-section">排行榜</a><a href="#shop-analysis-section">店铺分析</a><a href="#analysis-tools-section">分析工具</a><a href="#export-center">导出中心</a><a href="#dataHealth">数据状态</a>
+    </nav>
     <nav class="ranking-mode" aria-label="ランキング種別">
       <button class="mode-button active" data-ranking-mode="daily" type="button">日榜 デイリー</button>
       <button class="mode-button" data-ranking-mode="realtime" type="button"><span class="live-dot"></span>リアルタイム榜</button>
@@ -35,6 +38,17 @@
       <article><span>新規ランクイン</span><strong id="newCount">—</strong></article>
       <article><span id="captureLabel">データ期間</span><strong id="captureCount">—</strong></article>
       <article><span id="switchLabel">日榜検出時刻</span><strong id="dailySwitch">—</strong><small id="dailySwitchDetail">—</small></article>
+    </section>
+
+    <section id="today-intelligence" class="today-panel">
+      <div class="panel-heading"><div><p class="eyebrow">DAILY ACTION BOARD</p><h2>今日竞品重点</h2></div><span id="alertCount">计算中…</span></div>
+      <div class="alert-settings">
+        <label>单日上涨提醒<input id="alertRankJump" type="number" min="1" max="999" value="50">名</label>
+        <label>积分提醒<input id="alertPointRate" type="number" min="2" max="100" value="10">倍以上</label>
+        <label>优惠提醒<input id="alertCouponRate" type="number" min="1" max="99" value="30">%以上</label>
+        <button id="saveAlertSettings" type="button">保存提醒条件</button>
+      </div>
+      <div id="priorityAlerts" aria-live="polite"></div>
     </section>
 
     <section class="control-panel" aria-label="絞り込み">
@@ -55,6 +69,12 @@
         <button class="segment" data-days="30" type="button">30日</button>
       </div>
       <button id="csvButton" class="export-button" type="button">全件CSV出力</button>
+    </section>
+    <section class="saved-view-bar" aria-label="保存筛选方案">
+      <label>筛选方案<select id="savedViewSelect"><option value="">选择已保存方案</option></select></label>
+      <input id="savedViewName" maxlength="40" placeholder="例如：VEIMIA＋前100＋优惠">
+      <button id="saveView" type="button">保存当前筛选</button><button id="deleteView" type="button">删除方案</button>
+      <span id="savedViewStatus" role="status"></span>
     </section>
 
     <p id="categoryPath" class="category-path"></p>
@@ -100,13 +120,15 @@
       <details open><summary>每日变化摘要</summary><div id="dailyDigest"></div></details>
       <details><summary>收藏商品变化汇总</summary><div id="watchDigest"></div></details>
       <details open><summary>竞品店铺总览</summary><div id="shopOverview"></div></details>
-      <details open><summary>单店深度分析</summary>
+      <details id="shop-analysis-section" open><summary>单店深度分析</summary>
         <p>基于公开排行榜记录判断店铺的排名覆盖、主推款、促销节奏和评论变化。真实销量与准确库存不是公开数据，不会虚构。</p>
         <div class="analysis-controls"><label>选择店铺<select id="shopAnalysisSelect"><option value="">暂无店铺</option></select></label></div>
         <div id="shopAnalysis"></div>
       </details>
+      <details open><summary>重点店铺长期趋势</summary><p>关注店铺后，按保存日榜统计上榜商品数和前10商品数。只使用公开榜单，不代表销量。</p><div id="watchedShopTrends"></div></details>
       <details><summary>多店对比</summary><p>选择2～5家店，对比当前集计日的公开表现。按住Ctrl可多选。</p><select id="shopCompareSelect" multiple size="6" aria-label="选择对比店铺"></select><button id="compareShops" type="button">生成店铺对比</button><div id="shopComparison"></div></details>
       <details><summary>价格区间分析</summary><div id="priceBands"></div></details>
+      <details><summary>跨类目商品合并视图</summary><p>同一个商品只显示一次，集中查看最好排名和覆盖类目数。</p><div id="mergedProducts"></div></details>
       <details><summary>评论增长与评分变化</summary><div id="reviewGrowth"></div></details>
       <details><summary>商品标题修改记录</summary><p>每天完整日榜保存商品标题，超过30天后随日榜进入长期归档。上线前没有保存的标题无法补回。</p>
         <div class="analysis-controls"><label>修改日期从<input id="titleExportStart" type="date"></label><label>到<input id="titleExportEnd" type="date"></label><button id="exportTitleChanges" type="button">按店铺导出标题变化CSV</button></div>
@@ -118,6 +140,8 @@
       </div><p>仅填写已确认的活动，系统不会推测活动日期。记录保存在此浏览器。</p><div id="calendarRows"></div><p id="calendarStatus" role="status"></p></details>
       <details><summary>长期日榜归档</summary><p>近30天自动载入；超过30天的日榜长期保存，按需载入。更早已删除的记录不会自动恢复。</p><div class="analysis-controls"><label>开始<input id="archiveStart" type="date"></label><label>结束<input id="archiveEnd" type="date"></label><button id="loadArchive" type="button">载入归档日期</button><button id="exportArchive" type="button">导出已载入历史JSON</button></div><p id="archiveStatus" role="status"></p></details>
       <details><summary>分析笔记备份与导入</summary><p>备份包含收藏分组、备注、相似款标签、活动日历和商品页积分核对记录。收藏星标继续使用原来的收藏JSON。</p><button id="exportAnalysis" type="button">导出分析笔记</button><label>导入合并<input id="importAnalysis" type="file" accept=".json,application/json"></label><p id="analysisTransferStatus" role="status"></p></details>
+      <details id="export-center" open><summary>统一导出中心</summary><p>导出可由Excel直接打开的UTF-8 CSV，包含当前筛选商品、店铺汇总、今日提醒与数据状态。</p><button id="exportOperations" class="export-button" type="button">下载运营汇总CSV</button><p id="exportOperationsStatus" role="status"></p></details>
+      <details id="analysis-tools-section"><summary>数据来源与可信度</summary><div class="source-grid"><article><strong>排行榜API</strong><p>排名、API价格、API积分和评论数据。与楽天官方网页榜可能存在时间或名次差异。</p></article><article><strong>标题文字线索</strong><p>优惠券、P10倍等文字来自商品名或Catch Copy，只表示观察到宣称。</p></article><article><strong>商品页人工核对</strong><p>只有你手动登记的商品页积分才标为已确认，不自动回填旧记录。</p></article><article><strong>不可取得</strong><p>竞品真实销量、订单数与准确库存不是公开排行榜数据，不进行推算。</p></article></div></details>
       <p id="autoRefreshStatus" role="status">每2分钟检查已发布的日榜；发现新数据后自动加载，保留筛选条件和正在查看的历史日。</p>
     </section>
     <section id="keywordPanel" class="keyword-panel" aria-labelledby="keywordTitle">
@@ -133,7 +157,7 @@
     </section>
     <div id="errorBox" class="error-box" hidden></div>
 
-    <section class="table-shell" aria-label="ランキング一覧">
+    <section id="ranking-section" class="table-shell" aria-label="ランキング一覧">
       <table>
         <thead>
           <tr>
@@ -152,6 +176,7 @@
         <span>検索条件を変更してください。</span>
       </div>
     </section>
+    <nav id="pagination" class="pagination" aria-label="排行榜分页"></nav>
   </main>
 
   <dialog id="productDialog" aria-labelledby="detailTitle">

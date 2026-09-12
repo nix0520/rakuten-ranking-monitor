@@ -6,6 +6,10 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   let selectedShopKey = '';
   let shopOverviewSort = {key:'top10', direction:'desc'};
   const titleProductCache = new Map();
+  const SHOP_WATCH_KEY='rakuten-ranking-shop-watch-v1', ALERT_KEY='rakuten-ranking-alert-settings-v1';
+  const readJson=(key,fallback)=>{try{return JSON.parse(globalThis.localStorage.getItem(key))??fallback;}catch{return fallback;}};
+  let watchedShops=new Set(Array.isArray(readJson(SHOP_WATCH_KEY,[]))?readJson(SHOP_WATCH_KEY,[]):[]);
+  let alertSettings={rankJump:50,pointRate:10,couponRate:30,...readJson(ALERT_KEY,{})};
   const filters = {group:'',tag:'',signal:'',min:'',max:''};
   const captures = () => state.archive?.length ? state.archive : state.history?.captures || [];
   const endDay = () => state.viewSnapshot?.day || state.latest?.aggregateDate;
@@ -99,7 +103,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const roleCounts=[...new Map(products.map(p=>[p.role,0])).keys()].map(role=>[role,products.filter(p=>p.role===role).length]);
     const promotionRows=products.flatMap(({product})=>A.promotionTimeline(shopHistory(product)).filter(p=>p.known&&p.label!=='販促文言なし').map(p=>({product,period:p}))).sort((a,b)=>b.period.end.localeCompare(a.period.end)).slice(0,50);
     const strongest=products.slice(0,3).map(p=>p.product.itemName?.slice(0,28)||p.product.itemCode).join('、')||'暂无';
-    $('#shopAnalysis').innerHTML='<div class="shop-analysis-heading"><h3>'+heading+'</h3><small>店铺代码：'+esc(profile.key)+'</small></div>'+
+    $('#shopAnalysis').innerHTML='<div class="shop-analysis-heading"><h3>'+heading+'</h3><div><small>店铺代码：'+esc(profile.key)+'</small> <button type="button" data-watch-shop="'+esc(profile.key)+'">'+(watchedShops.has(profile.key)?'★ 已关注店铺':'☆ 关注店铺')+'</button></div></div>'+
       '<div class="shop-kpis">'+summary.map(([label,value])=>'<article><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></article>').join('')+'</div>'+
       '<p><strong>系统观察：</strong>中位价格 '+esc(profile.medianPrice==null?'未记录':amount(profile.medianPrice))+'；价格范围 '+esc(profile.minPrice==null?'未记录':amount(profile.minPrice)+'～'+amount(profile.maxPrice))+'；API积分加倍商品 '+esc(profile.pointed)+'款。当前热度较高的商品：'+esc(strongest)+'。</p>'+
       '<h3>推测的商品角色与热度</h3>'+table(['商品','推测角色','推定热度','最好排名 / 覆盖','公开促销线索'],products.map(({product,role,reason,heat})=>[rowLink(product),'<strong>'+esc(role)+'</strong><small>'+esc(reason)+'</small>','<span class="heat heat-'+(heat.level==='高'?'high':heat.level==='中'?'mid':'low')+'">'+esc(heat.level+' '+heat.score)+'</span><small>'+esc(heat.reasons.join(' · ')||'信号不足')+'</small>',esc(product.bestRank+'位 / '+product.categoryCount+'类目'),esc((product.promotionHints||[]).join(' · ')||'未发现')]))+
@@ -111,6 +115,14 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const previous=[...($('#shopCompareSelect').selectedOptions||[])].map(o=>o.value);
     $('#shopCompareSelect').innerHTML=shops.map(s=>'<option value="'+esc(s.key)+'"'+(previous.includes(s.key)?' selected':'')+'>'+esc(s.name+' · '+s.items+'商品')+'</option>').join('');
   }
+  function renderWatchedShopTrends(rows) {
+    const shops=A.shopOverview(rows), names=new Map(shops.map(s=>[s.key,s.name]));
+    const codes=[...watchedShops], trends=A.watchedShopTrend(captures(),codes,endDay());
+    $('#watchedShopTrends').innerHTML=codes.length?table(['店铺','当前上榜','较7个记录前','当前前10','期间前10峰值','操作'],codes.map(code=>{
+      const points=trends.get(code)||[],now=points.at(-1),before=points.at(-8)||points[0],peak=points.length?Math.max(...points.slice(-30).map(p=>p.top10)):0;
+      return [esc(names.get(code)||code),esc(now?.items??'未记录'),esc(now&&before?(now.items-before.items>=0?'+':'')+(now.items-before.items):'未记录'),esc(now?.top10??'未记录'),esc(peak),'<button type="button" data-watch-shop="'+esc(code)+'">取消关注</button>'];
+    }))+'<small>按每个集计日去重商品统计；“7个记录前”不是销量变化。店铺未在当前榜出现时仍保留关注。</small>':'尚未关注店铺。请在“单店深度分析”中选择店铺并点击“关注店铺”。';
+  }
   function renderShopComparison() {
     const keys=[...$('#shopCompareSelect').selectedOptions].map(o=>o.value);
     if(keys.length<2||keys.length>5){$('#shopComparison').textContent='请选择2～5家店铺。';return;}
@@ -119,19 +131,27 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   }
   function render() {
     $('#analysisPanel').hidden=state.mode!=='daily';
+    $('#today-intelligence').hidden=state.mode!=='daily';
     renderStatus(state.collectionStatus);
     if(state.mode!=='daily')return;
     const rows=state.rows||[], day=endDay();
     $('#analysisBasis').textContent='集计日 '+(day||'未记录')+'；以下统计采用当前类目、搜索和范围。店铺与价格带按商品去重，收藏列表继续保留类目记录。';
     const prior=snapshotRows(state.baselineSnapshot,null,state.latest?.categories||[]);
     const digest=A.dailyDigest(rows,prior);
+    const alerts=A.priorityAlerts(rows,prior,state.watchlist,alertSettings);
+    $('#alertRankJump').value=alertSettings.rankJump;$('#alertPointRate').value=alertSettings.pointRate;$('#alertCouponRate').value=alertSettings.couponRate;
+    $('#alertCount').textContent=alerts.length+'条需要关注';
+    $('#priorityAlerts').innerHTML=alerts.length?'<div class="priority-list">'+alerts.slice(0,20).map(a=>'<article class="priority-alert" data-level="'+a.level+'"><span class="alert-badge">'+esc(a.type)+'</span><div>'+rowLink(a.row)+'<small>'+esc(a.message)+' · '+esc(a.shopName)+(a.watched?' · ★收藏商品':'')+'</small></div></article>').join('')+'</div><small>共 '+alerts.length+' 条，优先显示收藏商品和高强度变化。提醒只依据保存数据。</small>':'<p>当前筛选范围没有达到提醒条件的变化。</p>';
     $('#dailyDigest').innerHTML=table(['商品','相对 '+(state.baselineSnapshot?.day||'前次集计日')+' 的变化'],digest.slice(0,30).map(r=>[rowLink(r),esc(r.messages.join(' · '))]))+'<small>共 '+digest.length+' 条变化，摘要展示前30条；完整排名表可筛选并导出CSV。</small>';
     const watched=digest.filter(r=>state.watchlist.has(r.itemCode));
     $('#watchDigest').innerHTML=table(['收藏商品','变化'],watched.map(r=>[rowLink(r),esc(r.messages.join(' · '))]));
     const allShopRows=shopRows();
     renderShopOverview(allShopRows);
     renderShopAnalysis(allShopRows);
+    renderWatchedShopTrends(allShopRows);
     $('#priceBands').innerHTML=textTable(['API价格带（当前范围前100名）','商品数'],A.priceBands(rows).map(b=>[b.label,b.count]));
+    const merged=A.consolidateProducts(rows);
+    $('#mergedProducts').innerHTML=table(['商品','最好排名','覆盖类目','各类目排名'],merged.slice(0,200).map(r=>[rowLink(r),esc(r.bestRank+'位'),esc(r.categoryCount+'个 · '+r.categoryNames.join('、')),esc(r.ranks.sort((a,b)=>a.rank-b.rank).map(x=>x.name+' '+x.rank+'位').join(' / '))]))+'<small>当前筛选共 '+merged.length+' 个去重商品，表格显示前200个；完整数据可从导出中心下载。</small>';
     const reviewRows=[...new Map(rows.filter(r=>r.rank!=null).map(r=>[r.itemCode,r])).values()].map(r=>({r,a:A.reviewGrowth(series(r),day,7),b:A.reviewGrowth(series(r),day,30)}));
     $('#reviewGrowth').innerHTML=table(['商品','7天评论增量','30天评论增量','7天评分变化'],reviewRows.sort((a,b)=>(b.a.count??-Infinity)-(a.a.count??-Infinity)).slice(0,30).map(({r,a,b})=>[rowLink(r),esc(a.count??'未记录'),esc(b.count??'未记录'),esc(a.rating===null?'未记录':a.rating.toFixed(2))]))+'<small>仅比较准确相隔7/30日的保存数据。负数可能来自评论清理；评论增量不等于销量。30日比较需31个日期，可通过归档加载补足。</small>';
     const allChanges=rows.flatMap(r=>A.titleChanges(series(r)).map(c=>({r,c}))).sort((a,b)=>b.c.to.localeCompare(a.c.to));
@@ -239,6 +259,17 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     if(typeof value==='string' && /^[=+\-@\t\r]/.test(value))value="'"+value;
     return '"'+String(value??'').replaceAll('"','""')+'"';
   }
+  function exportOperations() {
+    const rows=state.rows||[],prior=snapshotRows(state.baselineSnapshot,null,state.latest?.categories||[]),alerts=A.priorityAlerts(rows,prior,state.watchlist,alertSettings),shops=A.shopOverview(shopRows()),merged=A.consolidateProducts(rows);
+    const header=['记录类型','集计日','店铺名','店铺代码','商品编号','商品名','类目','排名','对比排名','变化','价格','API积分','提示/汇总','商品链接','数据来源'];
+    const values=[];
+    for(const r of rows)values.push(['商品排名',endDay(),r.shopName,r.shopCode||r.itemCode.split(':')[0],r.itemCode,r.itemName,r.category.name,r.rank,r.previousRank,r.change,r.itemPrice,r.pointRate,(r.promotionHints||[]).join(' | '),r.itemUrl,'楽天排行榜API保存值']);
+    for(const s of shops)values.push(['店铺汇总',endDay(),s.name,s.key,'','','',s.items,s.top10,s.up-s.down,'','',`前10 ${s.top10} / 前100 ${s.top100} / 上涨 ${s.up} / 下跌 ${s.down}`,'','公开榜单推算']);
+    for(const a of alerts)values.push(['今日提醒',endDay(),a.shopName,a.row.shopCode||a.row.itemCode.split(':')[0],a.row.itemCode,a.row.itemName,a.row.category.name,a.row.rank,a.row.previousRank,a.row.change,a.row.itemPrice,a.row.pointRate,a.type+'：'+a.message,a.row.itemUrl,'保存值规则判断']);
+    for(const r of merged)values.push(['跨类目合并',endDay(),r.shopName,r.shopCode||r.itemCode.split(':')[0],r.itemCode,r.itemName,r.categoryNames.join(' | '),r.bestRank,'','',r.itemPrice,r.pointRate,`覆盖${r.categoryCount}类目`,r.itemUrl,'楽天排行榜API保存值']);
+    const blob=new Blob(['\ufeff'+[header,...values].map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='rakuten-operations-'+endDay()+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+    $('#exportOperationsStatus').textContent='已导出 '+values.length+' 行，可用Excel打开并按“记录类型”筛选。';
+  }
   async function exportTitleChanges() {
     const start=$('#titleExportStart').value,end=$('#titleExportEnd').value,status=$('#titleExportStatus');
     if(!A.shiftDay(start,0)||!A.shiftDay(end,0)||start>end){status.textContent='请选择有效的修改日期范围。';return;}
@@ -294,10 +325,17 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     }catch(e){$('#archiveStatus').textContent=e.message+'；保留原来的数据，可重试。';}finally{busy=false;}
   }
   function bind(openDetail) {
+    const openAnalysisDetail=event=>{
+      const btn=event.target.closest('[data-analysis-detail]');if(!btn)return false;
+      const r=shopRows().find(r=>r.itemCode===btn.dataset.analysisDetail&&String(r.category.id)===btn.dataset.genre);
+      if(r)openDetail(r);else{btn.disabled=true;btn.textContent='历史资料不可用';}return true;
+    };
+    const toggleShop=code=>{if(!code)return;if(watchedShops.has(code))watchedShops.delete(code);else watchedShops.add(code);globalThis.localStorage.setItem(SHOP_WATCH_KEY,JSON.stringify([...watchedShops]));render();};
     for(const [id,key] of [['noteGroupFilter','group'],['tagFilter','tag'],['signalFilter','signal'],['priceMin','min'],['priceMax','max']]){
       $( '#'+id).addEventListener('change',event=>{filters[key]=event.target.value;refreshView();});
     }
     $('#analysisPanel').addEventListener('click',event=>{
+      const shop=event.target.closest('[data-watch-shop]');if(shop){toggleShop(shop.dataset.watchShop);return;}
       const sort=event.target.closest('[data-shop-sort]');
       if(sort){
         const key=sort.dataset.shopSort;
@@ -308,15 +346,11 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
         return;
       }
       const btn=event.target.closest('[data-analysis-detail]');
-      if(btn){
-        const r=shopRows().find(r=>r.itemCode===btn.dataset.analysisDetail&&String(r.category.id)===btn.dataset.genre);
-        if(r)openDetail(r);
-        else {btn.disabled=true;btn.textContent='历史资料不可用';}
-        return;
-      }
+      if(btn){openAnalysisDetail(event);return;}
       const del=event.target.closest('[data-delete-event]');
       if(del){try{save({...notebook,events:notebook.events.filter((_,i)=>i!==Number(del.dataset.deleteEvent))});render();}catch{$('#calendarStatus').textContent='保存失败';}}
     });
+    $('#today-intelligence').addEventListener('click',event=>{openAnalysisDetail(event);});
     $('#addCalendarEvent').addEventListener('click',()=>{
       try{
         const event={title:$('#eventTitle').value.trim(),start:$('#eventStart').value,end:$('#eventEnd').value,source:$('#eventSource').value};
@@ -331,6 +365,11 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#exportAnalysis').addEventListener('click',()=>download('ranking-analysis-notes.json',notebook));
     $('#exportArchive').addEventListener('click',()=>download('ranking-loaded-history.json',{captures:captures()}));
     $('#exportTitleChanges').addEventListener('click',exportTitleChanges);
+    $('#exportOperations').addEventListener('click',exportOperations);
+    $('#saveAlertSettings').addEventListener('click',()=>{
+      alertSettings={rankJump:Math.max(1,Math.min(999,Number($('#alertRankJump').value)||50)),pointRate:Math.max(2,Math.min(100,Number($('#alertPointRate').value)||10)),couponRate:Math.max(1,Math.min(99,Number($('#alertCouponRate').value)||30))};
+      globalThis.localStorage.setItem(ALERT_KEY,JSON.stringify(alertSettings));render();
+    });
     $('#importAnalysis').addEventListener('change',async e=>{
       try{
         const file=e.target.files?.[0];if(!file)return;
