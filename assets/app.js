@@ -474,7 +474,7 @@ async function openDetail(row) {
       row.category.id, row.itemCode, 30
     ));
     const couponHistory = coupons.length
-      ? `<section class="metric-chart"><h3>クーポン検出履歴</h3><ul class="event-list">${coupons.map(period => `<li><strong>${escapeHtml(period.label)}</strong> — ${period.start === period.end ? `${period.start}に検出` : `${period.start}～${period.end}に連続検出`}</li>`).join("")}</ul><p>商品名・キャッチコピーに同じ券文言が記録された集計日の範囲です。実際の配布開始・終了日時とは限りません。</p></section>`
+      ? `<section class="metric-chart"><h3>クーポン検出履歴</h3><ul class="event-list">${coupons.slice().sort((a,b)=>b.end.localeCompare(a.end)).map(period => `<li><strong>${escapeHtml(period.label)}</strong> — ${period.start === period.end ? `${period.start}に検出` : `${period.start}～${period.end}に連続検出`}</li>`).join("")}</ul><p>商品名・キャッチコピーに同じ券文言が記録された集計日の範囲です。実際の配布開始・終了日時とは限りません。</p></section>`
       : `<section class="metric-chart"><h3>クーポン検出履歴</h3><p>記録された割引額付きクーポンはありません。</p></section>`;
     $("#detailBody").innerHTML = `<h3>日榜履歴 · 前回の集計日との比較</h3><p>${escapeHtml(row.category.name)} · ${escapeHtml(row.itemCode)} · 過去${state.days}日</p>
     <p>日榜は楽天集計日で表示。集計日がない旧記録のみ取得日と明記します。欠測は線を切り、価格・ポイントの未記録分は補完しません。</p>
@@ -483,7 +483,7 @@ async function openDetail(row) {
     ${metricChart(points, "itemPrice", "日榜取得時の商品価格", "円")}
     ${metricChart(points, "pointRate", "日榜取得時の商品ポイント", "倍")}
     ${couponHistory}
-    <div class="history-scroll"><table class="history-grid"><thead><tr><th>日付 / 基準</th><th>順位</th><th>前回日榜比</th><th>価格</th><th>ポイント</th><th>販促の手掛かり</th></tr></thead><tbody>${points.map(p => `<tr><td>${p.day}<small>${p.dateBasis === "aggregate" ? "集計日" : "取得日・集計日不明"}</small></td><td>${p.rank ?? "圏外 / 未取得"}</td><td>${dailyChangeLabel(p)}</td><td>${p.itemPrice === null ? "未記録" : yen.format(p.itemPrice)}</td><td>${p.pointRate === null ? "未記録" : `${p.pointRate}倍`}</td><td>${p.promotionHints === null ? "未記録" : escapeHtml(p.promotionHints.join(" · ") || "文言なし")}</td></tr>`).join("")}</tbody></table></div>
+    <div class="history-scroll"><table class="history-grid"><thead><tr><th>日付 / 基準</th><th>順位</th><th>前回日榜比</th><th>価格</th><th>ポイント</th><th>販促の手掛かり</th></tr></thead><tbody>${points.slice().reverse().map(p => `<tr><td>${p.day}<small>${p.dateBasis === "aggregate" ? "集計日" : "取得日・集計日不明"}</small></td><td>${p.rank ?? "圏外 / 未取得"}</td><td>${dailyChangeLabel(p)}</td><td>${p.itemPrice === null ? "未記録" : yen.format(p.itemPrice)}</td><td>${p.pointRate === null ? "未記録" : `${p.pointRate}倍`}</td><td>${p.promotionHints === null ? "未記録" : escapeHtml(p.promotionHints.join(" · ") || "文言なし")}</td></tr>`).join("")}</tbody></table></div>
     <p>価格はAPIの商品価格です。券適用後の支払額や店舗共通ポイントを網羅しません。順位と販促の同時変化は因果関係を証明するものではありません。</p>`;
     $("#detailBody").innerHTML += analysis.extras(row);
     analysis.bindDetail();

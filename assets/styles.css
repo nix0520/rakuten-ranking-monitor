@@ -269,6 +269,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 .shop-change-badge.title{color:#8a3e00;background:#fff0df;border:1px solid #f0c58f}
 .shop-change-badge.promotion{color:#a00000;background:#fff0ef;border:1px solid #e8b3ad}
 .shop-change-badge.active{color:#17624c;background:#eaf8f2;border:1px solid #acdcca}
+.product-title-change{margin:7px 0 0 7px;vertical-align:middle}
 .shop-change-none{color:var(--muted);background:#f4f2ef;border:1px solid var(--line)}
 .analysis-controls label,.analysis-detail label{display:flex;flex-direction:column;gap:6px;font-size:13px;flex:1;min-width:140px}
 .analysis-controls input,.analysis-controls select,.analysis-detail input,.analysis-detail textarea,#compareProducts{border:1px solid #d9d2cc;border-radius:7px;padding:9px;font:inherit;background:white;color:#14212b;max-width:100%;min-width:0}

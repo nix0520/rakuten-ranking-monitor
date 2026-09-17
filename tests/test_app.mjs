@@ -117,6 +117,7 @@ test('title record shop search filters displayed changes and watched shops show 
     {itemCode:'beta:1',shopCode:'beta',shopName:'Beta Store',itemName:'New Beta',rank:2,promotionHints:[]}
   ]}};
   state.history={captures:[
+    {aggregateDate:'2026-09-15',capturedAt:'2026-09-15T15:00:00+09:00',genres:{1:{'alpha:1':5,'beta:1':6}},metrics:{1:{'alpha:1':{itemName:'Very Old Alpha',promotionHints:[]},'beta:1':{itemName:'Very Old Beta',promotionHints:[]}}}},
     {aggregateDate:'2026-09-16',capturedAt:'2026-09-16T15:00:00+09:00',genres:{1:{'alpha:1':3,'beta:1':4}},metrics:{1:{'alpha:1':{itemName:'Old Alpha',promotionHints:[]},'beta:1':{itemName:'Old Beta',promotionHints:[]}}}},
     {aggregateDate:'2026-09-17',capturedAt:'2026-09-17T15:00:00+09:00',genres:{1:{'alpha:1':1,'beta:1':2}},metrics:{1:{'alpha:1':{itemName:'New Alpha 30%OFFクーポン',promotionHints:['30%OFFクーポン']},'beta:1':{itemName:'New Beta',promotionHints:[]}}}}
   ]}; bindEvents(); refreshView();`);
@@ -127,6 +128,10 @@ test('title record shop search filters displayed changes and watched shops show 
   assert.match(a.element('#shopAnalysis').innerHTML,/标题修改 1/);
   assert.match(a.element('#shopAnalysis').innerHTML,/新增\/变更活动线索 1/);
   assert.match(a.element('#shopAnalysis').innerHTML,/标题修改 2026-09-17/);
+  assert.match(a.element('#shopAnalysis').innerHTML,/标题修改：2026-09-16 → 2026-09-17/);
+  await a.run("openDetail(state.rows.find(row=>row.itemCode==='alpha:1'))");
+  const titleSection=a.element('#detailBody').innerHTML.split('<h3>商品标题修改记录</h3>')[1];
+  assert.ok(titleSection.indexOf('2026-09-16')<titleSection.indexOf('2026-09-15'));
   const panel=a.element('#analysisPanel');
   panel.handlers.click({target:{closest:selector=>selector==='[data-watch-shop]'?{dataset:{watchShop:'alpha'}}:null}});
   assert.match(a.element('#watchedShopTrends').innerHTML,/标题修改 1/);
@@ -201,6 +206,8 @@ test('selected daily date shows coupon amount and observed date range', async ()
   await a.run('openDetail(state.rows[0])');
   assert.match(a.element('#detailBody').innerHTML, /クーポン検出履歴/);
   assert.match(a.element('#detailBody').innerHTML, /2026-09-01～2026-09-02に連続検出/);
+  const historyBody=a.element('#detailBody').innerHTML.split('<table class="history-grid">')[1];
+  assert.ok(historyBody.indexOf('2026-09-02')<historyBody.indexOf('2026-09-01'));
 });
 
 test('zero-rank history and gaps produce no invalid SVG coordinates', () => {

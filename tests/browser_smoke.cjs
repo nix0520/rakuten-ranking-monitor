@@ -9,7 +9,7 @@ const categories=JSON.parse(fs.readFileSync(path.join(root,'config/categories.js
 const day='2026-09-06',genre='110854';
 let revision=0;
 const dates=Array.from({length:31},(_,i)=>new Date(Date.parse(day+'T00:00:00Z')-(30-i)*86400000).toISOString().slice(0,10));
-const rows=n=>[1,2].map((i)=>({itemCode:'s:'+i,rank:i===1?Math.max(1,31-n):5,itemName:(n<29?'20%OFFクーポン':'30%OFFクーポン')+' P10倍 テストブラ '+i,catchcopy:'',itemPrice:3000,pointRate:1,reviewCount:100+n,reviewAverage:4.5,shopCode:'s',shopName:'Test shop',promotionHints:[n<29?'20%OFFクーポン':'30%OFFクーポン'],itemUrl:'https://item.rakuten.co.jp/test/product/',imageUrl:'https://image.rakuten.co.jp/test.jpg'}));
+const rows=n=>[1,2].map((i)=>({itemCode:'s:'+i,rank:i===1?Math.max(1,31-n):5,itemName:(n<30?'20%OFFクーポン':'30%OFFクーポン')+' P10倍 テストブラ '+i,catchcopy:'',itemPrice:3000,pointRate:1,reviewCount:100+n,reviewAverage:4.5,shopCode:'s',shopName:'Test shop',promotionHints:[n<30?'20%OFFクーポン':'30%OFFクーポン'],itemUrl:'https://item.rakuten.co.jp/test/product/',imageUrl:'https://image.rakuten.co.jp/test.jpg'}));
 const snapshots=dates.map((d,n)=>({aggregateDate:d,capturedAt:d+'T15:06:00+09:00',genres:Object.fromEntries(categories.map(c=>[c.id,Object.fromEntries(rows(n).map(r=>[r.itemCode,r.rank]))])),metrics:Object.fromEntries(categories.map(c=>[c.id,Object.fromEntries(rows(n).map(r=>[r.itemCode,{itemPrice:r.itemPrice,pointRate:r.pointRate,itemName:r.itemName,promotionText:r.itemName,reviewCount:r.reviewCount,reviewAverage:r.reviewAverage,promotionHints:r.promotionHints}]))])),products:Object.fromEntries(rows(n).map(r=>[r.itemCode,r]))}));
 const latest=()=>({aggregateDate:day,generatedAt:day+(revision?'T16:06:00+09:00':'T15:06:00+09:00'),collectionVersion:2,categories,rankings:Object.fromEntries(categories.map(c=>[c.id,rows(30)]))});
 const server=http.createServer((req,res)=>{
@@ -65,6 +65,7 @@ const server=http.createServer((req,res)=>{
     assert.match(await page.locator('#shopAnalysis').innerText(),/没有匹配/);
     await page.fill('#shopAnalysisSearch','');
     assert.match(await page.locator('#shopAnalysis').innerText(),/推测的商品角色与热度/);
+    assert.match(await page.locator('#shopAnalysis').innerText(),/标题修改：/);
     assert.match(await page.locator('#shopOverview').innerText(),/排行/);
     await page.fill('#shopOverviewSearch','Test shop');await page.click('#searchShopOverview');
     assert.match(await page.locator('#shopOverviewSearchStatus').innerText(),/Test shop/);
@@ -87,6 +88,7 @@ const server=http.createServer((req,res)=>{
     await page.locator('#dailyDigest [data-analysis-detail]').first().click();
     await page.locator('#productDialog').waitFor({state:'visible'});
     assert.match(await page.locator('#detailBody').innerText(),/促销与积分追溯/);
+    assert.match(await page.locator('.history-grid tbody tr').first().innerText(),new RegExp(day));
     await page.fill('#productGroup','直接竞品');
     await page.fill('#productTags','无钢圈,厚杯');
     await page.fill('#productNote','只比较同类目');
