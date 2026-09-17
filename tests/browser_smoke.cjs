@@ -65,6 +65,7 @@ const server=http.createServer((req,res)=>{
     assert.match(await page.locator('#shopAnalysis').innerText(),/没有匹配/);
     await page.fill('#shopAnalysisSearch','');
     assert.match(await page.locator('#shopAnalysis').innerText(),/推测的商品角色与热度/);
+    assert.match(await page.locator('#shopOverview').innerText(),/排行/);
     assert.match(await page.locator('#shopAnalysis').innerText(),/真实销量、订单数和准确库存不公开/);
     await page.locator('#shopAnalysis [data-watch-shop]').click();
     assert.match(await page.locator('#watchedShopTrends').innerText(),/Test shop/);
@@ -78,6 +79,9 @@ const server=http.createServer((req,res)=>{
     assert.equal(await summaryLink.getAttribute('target'),'_blank');
     assert.equal(await page.locator('#dailyDigest [data-analysis-detail]').first().innerText(),'历史详情');
     assert.match(await page.locator('#titleUpdates').textContent(),/长期归档/);
+    await page.locator('#titleShopSearch').evaluate(input=>{input.closest('details').open=true;});
+    await page.fill('#titleShopSearch','Test shop');await page.click('#searchTitleChanges');
+    assert.match(await page.locator('#titleSearchStatus').innerText(),/Test shop/);
     await page.locator('#dailyDigest [data-analysis-detail]').first().click();
     await page.locator('#productDialog').waitFor({state:'visible'});
     assert.match(await page.locator('#detailBody').innerText(),/促销与积分追溯/);

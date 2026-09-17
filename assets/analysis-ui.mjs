@@ -1,14 +1,15 @@
 import * as A from './analysis-tools.mjs';
 import { snapshotRows } from './history-tools.mjs';
 
-export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatStamp, sparkline}) {
-  let notebook = A.readNotebook(globalThis.localStorage), currentRow = null, busy = false;
+export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatStamp, sparkline, storage=globalThis.localStorage}) {
+  let notebook = A.readNotebook(storage), currentRow = null, busy = false;
   let selectedShopKey = '';
   let shopAnalysisQuery = '';
+  let titleShopQuery = '';
   let shopOverviewSort = {key:'top10', direction:'desc'};
   const titleProductCache = new Map();
   const SHOP_WATCH_KEY='rakuten-ranking-shop-watch-v1', ALERT_KEY='rakuten-ranking-alert-settings-v1';
-  const readJson=(key,fallback)=>{try{return JSON.parse(globalThis.localStorage.getItem(key))??fallback;}catch{return fallback;}};
+  const readJson=(key,fallback)=>{try{return JSON.parse(storage.getItem(key))??fallback;}catch{return fallback;}};
   let watchedShops=new Set(Array.isArray(readJson(SHOP_WATCH_KEY,[]))?readJson(SHOP_WATCH_KEY,[]):[]);
   let alertSettings={rankJump:50,pointRate:10,couponRate:30,...readJson(ALERT_KEY,{})};
   const filters = {group:'',tag:'',signal:'',min:'',max:''};
@@ -46,7 +47,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   };
   function save(next) {
     const clean=A.cleanNotebook(next);
-    globalThis.localStorage.setItem(A.NOTES_KEY, JSON.stringify(clean));
+    storage.setItem(A.NOTES_KEY, JSON.stringify(clean));
     notebook=clean;
   }
   function matches(row) {
@@ -89,8 +90,18 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
       const aria=active?(shopOverviewSort.direction==='asc'?'ascending':'descending'):'none';
       return '<th aria-sort="'+aria+'"><button class="analysis-sort-button" type="button" data-shop-sort="'+key+'">'+esc(label)+'<span aria-hidden="true">'+arrow+'</span></button></th>';
     }).join('');
-    const body=shops.length?shops.map(s=>'<tr>'+columns.map(([key])=>'<td>'+esc(s[key])+'</td>').join('')+'</tr>').join(''):'<tr><td colspan="'+columns.length+'">該当する記録がありません。</td></tr>';
-    $('#shopOverview').innerHTML='<div class="analysis-scroll"><table class="analysis-table"><thead><tr>'+headings+'</tr></thead><tbody>'+body+'</tbody></table></div><small>表头可点击切换升序/降序。覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+    const body=shops.length?shops.map((s,index)=>'<tr><td class="shop-overview-rank">'+(index+1)+'</td>'+columns.map(([key])=>'<td>'+esc(s[key])+'</td>').join('')+'</tr>').join(''):'<tr><td colspan="'+(columns.length+1)+'">該当する記録がありません。</td></tr>';
+    $('#shopOverview').innerHTML='<div class="analysis-scroll"><table class="analysis-table"><thead><tr><th>排行</th>'+headings+'</tr></thead><tbody>'+body+'</tbody></table></div><small>排行序号按当前排序结果重新编号；表头可点击切换升序/降序。覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+  }
+  function shopSignals(profile) {
+    return A.shopChangeSignals(profile.products.map(entry=>entry.product),shopHistory,endDay());
+  }
+  function signalBadges(signals) {
+    const badges=[];
+    if(signals.titleChanged)badges.push('<span class="shop-change-badge title">标题修改 '+signals.titleChanged+'</span>');
+    if(signals.promotionChanged)badges.push('<span class="shop-change-badge promotion">新增/变更活动线索 '+signals.promotionChanged+'</span>');
+    else if(signals.activePromotion)badges.push('<span class="shop-change-badge active">活动线索进行中 '+signals.activePromotion+'</span>');
+    return badges.join(' ');
   }
   function renderShopAnalysis(rows) {
     const allShops=A.shopOverview(rows), query=shopAnalysisQuery.trim().toLocaleLowerCase('ja');
@@ -106,7 +117,9 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const roleCounts=[...new Map(products.map(p=>[p.role,0])).keys()].map(role=>[role,products.filter(p=>p.role===role).length]);
     const promotionRows=products.flatMap(({product})=>A.promotionTimeline(shopHistory(product)).filter(p=>p.known&&p.label!=='販促文言なし').map(p=>({product,period:p}))).sort((a,b)=>b.period.end.localeCompare(a.period.end)).slice(0,50);
     const strongest=products.slice(0,3).map(p=>p.product.itemName?.slice(0,28)||p.product.itemCode).join('、')||'暂无';
+    const watched=watchedShops.has(profile.key), signals=watched?shopSignals(profile):null;
     $('#shopAnalysis').innerHTML='<div class="shop-analysis-heading"><h3>'+heading+'</h3><div><small>店铺代码：'+esc(profile.key)+'</small> <button type="button" data-watch-shop="'+esc(profile.key)+'">'+(watchedShops.has(profile.key)?'★ 已关注店铺':'☆ 关注店铺')+'</button></div></div>'+
+      (watched?'<div class="shop-change-signals">'+(signalBadges(signals)||'<span class="shop-change-none">本集计日暂未发现标题或活动线索变化</span>')+'</div>':'')+
       '<div class="shop-kpis">'+summary.map(([label,value])=>'<article><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></article>').join('')+'</div>'+
       '<p><strong>系统观察：</strong>中位价格 '+esc(profile.medianPrice==null?'未记录':amount(profile.medianPrice))+'；价格范围 '+esc(profile.minPrice==null?'未记录':amount(profile.minPrice)+'～'+amount(profile.maxPrice))+'；API积分加倍商品 '+esc(profile.pointed)+'款。当前热度较高的商品：'+esc(strongest)+'。</p>'+
       '<h3>推测的商品角色与热度</h3>'+table(['商品','推测角色','推定热度','最好排名 / 覆盖','公开促销线索'],products.map(({product,role,reason,heat})=>[rowLink(product),'<strong>'+esc(role)+'</strong><small>'+esc(reason)+'</small>','<span class="heat heat-'+(heat.level==='高'?'high':heat.level==='中'?'mid':'low')+'">'+esc(heat.level+' '+heat.score)+'</span><small>'+esc(heat.reasons.join(' · ')||'信号不足')+'</small>',esc(product.bestRank+'位 / '+product.categoryCount+'类目'),esc((product.promotionHints||[]).join(' · ')||'未发现')]))+
@@ -119,12 +132,13 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#shopCompareSelect').innerHTML=shops.map(s=>'<option value="'+esc(s.key)+'"'+(previous.includes(s.key)?' selected':'')+'>'+esc(s.name+' · '+s.items+'商品')+'</option>').join('');
   }
   function renderWatchedShopTrends(rows) {
-    const shops=A.shopOverview(rows), names=new Map(shops.map(s=>[s.key,s.name]));
+    const shops=A.shopOverview(rows), names=new Map(shops.map(s=>[s.key,s.name])), profiles=new Map([...watchedShops].map(code=>[code,A.shopProfile(rows,code,shopHistory)]));
     const codes=[...watchedShops], trends=A.watchedShopTrend(captures(),codes,endDay());
-    $('#watchedShopTrends').innerHTML=codes.length?table(['店铺','当前上榜','较7个记录前','当前前10','期间前10峰值','操作'],codes.map(code=>{
+    $('#watchedShopTrends').innerHTML=codes.length?table(['店铺','最新标识','当前上榜','较7个记录前','当前前10','期间前10峰值','操作'],codes.map(code=>{
       const points=trends.get(code)||[],now=points.at(-1),before=points.at(-8)||points[0],peak=points.length?Math.max(...points.slice(-30).map(p=>p.top10)):0;
-      return [esc(names.get(code)||code),esc(now?.items??'未记录'),esc(now&&before?(now.items-before.items>=0?'+':'')+(now.items-before.items):'未记录'),esc(now?.top10??'未记录'),esc(peak),'<button type="button" data-watch-shop="'+esc(code)+'">取消关注</button>'];
-    }))+'<small>按每个集计日去重商品统计；“7个记录前”不是销量变化。店铺未在当前榜出现时仍保留关注。</small>':'尚未关注店铺。请在“单店深度分析”中选择店铺并点击“关注店铺”。';
+      const profile=profiles.get(code), signals=profile?shopSignals(profile):{titleChanged:0,promotionChanged:0,activePromotion:0};
+      return [esc(names.get(code)||code),signalBadges(signals)||'<span class="shop-change-none">暂无变化</span>',esc(now?.items??'未记录'),esc(now&&before?(now.items-before.items>=0?'+':'')+(now.items-before.items):'未记录'),esc(now?.top10??'未记录'),esc(peak),'<button type="button" data-watch-shop="'+esc(code)+'">取消关注</button>'];
+    }))+'<small>标题与活动标识按当前集计日和上一条已保存记录比较；“活动线索”来自公开标题/促销文案，不代表真实成交。按每个集计日去重商品统计；“7个记录前”不是销量变化。</small>':'尚未关注店铺。请在“单店深度分析”中选择店铺并点击“关注店铺”。';
   }
   function renderShopComparison() {
     const keys=[...$('#shopCompareSelect').selectedOptions].map(o=>o.value);
@@ -158,6 +172,8 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const reviewRows=[...new Map(rows.filter(r=>r.rank!=null).map(r=>[r.itemCode,r])).values()].map(r=>({r,a:A.reviewGrowth(series(r),day,7),b:A.reviewGrowth(series(r),day,30)}));
     $('#reviewGrowth').innerHTML=table(['商品','7天评论增量','30天评论增量','7天评分变化'],reviewRows.sort((a,b)=>(b.a.count??-Infinity)-(a.a.count??-Infinity)).slice(0,30).map(({r,a,b})=>[rowLink(r),esc(a.count??'未记录'),esc(b.count??'未记录'),esc(a.rating===null?'未记录':a.rating.toFixed(2))]))+'<small>仅比较准确相隔7/30日的保存数据。负数可能来自评论清理；评论增量不等于销量。30日比较需31个日期，可通过归档加载补足。</small>';
     const allChanges=rows.flatMap(r=>A.titleChanges(series(r)).map(c=>({r,c}))).sort((a,b)=>b.c.to.localeCompare(a.c.to));
+    const titleQuery=titleShopQuery.trim().toLocaleLowerCase('ja');
+    const visibleTitleChanges=titleQuery?allChanges.filter(({r})=>`${r.shopName||''} ${r.shopCode||''} ${String(r.itemCode||'').split(':')[0]}`.toLocaleLowerCase('ja').includes(titleQuery)):allChanges;
     const titleDays=rows.flatMap(r=>series(r).filter(p=>p.title!=null).map(p=>p.day)).sort();
     const titleRange=titleDays.length ? titleDays[0]+' ～ '+titleDays.at(-1) : 'まだ記録なし';
     const availableTitleDays=captures().filter(c=>c.products||c.productsFile).map(c=>c.aggregateDate).filter(day=>A.shiftDay(day,0)).sort();
@@ -167,7 +183,8 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
       if(!A.shiftDay(titleStart.value,0))titleStart.value=availableTitleDays[0];
       if(!A.shiftDay(titleEnd.value,0))titleEnd.value=availableTitleDays.at(-1);
     }
-    $('#titleUpdates').innerHTML=table(['商品','观察日期','修改前','修改后'],allChanges.slice(0,30).map(({r,c})=>[rowLink(r),esc(c.from+' → '+c.to),esc(c.before),esc(c.after)]))+
+    $('#titleSearchStatus').textContent=titleQuery?'店铺搜索“'+titleShopQuery.trim()+'”：找到 '+visibleTitleChanges.length+' 条标题修改记录。':'显示全部店铺的标题修改记录。';
+    $('#titleUpdates').innerHTML=table(['商品','观察日期','修改前','修改后'],visibleTitleChanges.slice(0,30).map(({r,c})=>[rowLink(r),esc(c.from+' → '+c.to),esc(c.before),esc(c.after)]))+
       '<small>当前载入的标题记录范围：'+esc(titleRange)+'。完整日榜会保存当天标题；超过30天后随日榜进入长期归档。载入更早归档后，这里的范围和修改记录会一起扩展。上线前没有保存的标题无法补回。</small>';
     const groups=[...new Set(Object.values(notebook.products).map(p=>p.group).filter(Boolean))];
     $('#noteGroupFilter').innerHTML='<option value="">全部收藏分组</option>'+groups.map(g=>'<option value="'+esc(g)+'">'+esc(g)+'</option>').join('');
@@ -295,12 +312,12 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
         }));
         hydrated.push(...batch);status.textContent='正在读取商品标题资料：'+Math.min(i+3,source.length)+'/'+source.length+'日';
       }
-      const rows=A.titleChangeRows(hydrated,start,end);
+      const rows=A.titleChangeRows(hydrated,start,end).filter(row=>!titleShopQuery.trim()||`${row.shopName||''} ${row.shopCode||''}`.toLocaleLowerCase('ja').includes(titleShopQuery.trim().toLocaleLowerCase('ja')));
       const headers=['店铺名','店铺代码','商品编号','商品URL','修改日期（集计日）','上次观察日期','连续两日观察','修改前标题','修改后标题'];
       const values=rows.map(r=>[r.shopName,r.shopCode,r.itemCode,r.itemUrl,r.changedDate,r.previousObservedDate,r.continuous?'是':'否（中间有缺测或未进榜）',r.before,r.after]);
       const blob=new Blob(['\ufeff'+[headers,...values].map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
       const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='rakuten-title-changes-by-shop-'+start+'-'+end+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
-      status.textContent='已下载 '+rows.length+' 条标题修改记录（'+start+'～'+end+'）。CSV已按店铺名排序。';
+      status.textContent='已下载 '+rows.length+' 条标题修改记录（'+start+'～'+end+'）'+(titleShopQuery.trim()?'，店铺搜索：'+titleShopQuery.trim():'')+'。CSV已按店铺名排序。';
     }catch(e){status.textContent=e.message+'；没有生成不完整文件，请重试。';}finally{busy=false;}
   }
   async function loadArchive() {
@@ -333,7 +350,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
       const r=shopRows().find(r=>r.itemCode===btn.dataset.analysisDetail&&String(r.category.id)===btn.dataset.genre);
       if(r)openDetail(r);else{btn.disabled=true;btn.textContent='历史资料不可用';}return true;
     };
-    const toggleShop=code=>{if(!code)return;if(watchedShops.has(code))watchedShops.delete(code);else watchedShops.add(code);globalThis.localStorage.setItem(SHOP_WATCH_KEY,JSON.stringify([...watchedShops]));render();};
+    const toggleShop=code=>{if(!code)return;if(watchedShops.has(code))watchedShops.delete(code);else watchedShops.add(code);storage.setItem(SHOP_WATCH_KEY,JSON.stringify([...watchedShops]));render();};
     for(const [id,key] of [['noteGroupFilter','group'],['tagFilter','tag'],['signalFilter','signal'],['priceMin','min'],['priceMax','max']]){
       $( '#'+id).addEventListener('change',event=>{filters[key]=event.target.value;refreshView();});
     }
@@ -364,6 +381,9 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#drawMultiTrend').addEventListener('click',compareProducts);
     $('#shopAnalysisSelect').addEventListener('change',event=>{selectedShopKey=event.target.value;render();});
     $('#shopAnalysisSearch').addEventListener('input',event=>{shopAnalysisQuery=event.target.value;renderShopAnalysis(shopRows());});
+    const searchTitleChanges=()=>{titleShopQuery=$('#titleShopSearch').value.trim();render();};
+    $('#searchTitleChanges').addEventListener('click',searchTitleChanges);
+    $('#titleShopSearch').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchTitleChanges();}});
     $('#compareShops').addEventListener('click',renderShopComparison);
     $('#loadArchive').addEventListener('click',loadArchive);
     $('#exportAnalysis').addEventListener('click',()=>download('ranking-analysis-notes.json',notebook));
@@ -372,7 +392,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#exportOperations').addEventListener('click',exportOperations);
     $('#saveAlertSettings').addEventListener('click',()=>{
       alertSettings={rankJump:Math.max(1,Math.min(999,Number($('#alertRankJump').value)||50)),pointRate:Math.max(2,Math.min(100,Number($('#alertPointRate').value)||10)),couponRate:Math.max(1,Math.min(99,Number($('#alertCouponRate').value)||30))};
-      globalThis.localStorage.setItem(ALERT_KEY,JSON.stringify(alertSettings));render();
+      storage.setItem(ALERT_KEY,JSON.stringify(alertSettings));render();
     });
     $('#importAnalysis').addEventListener('change',async e=>{
       try{

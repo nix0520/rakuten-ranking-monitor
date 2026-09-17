@@ -102,6 +102,27 @@ export function promotionTimeline(series) {
   }
   return out;
 }
+
+export function shopChangeSignals(products, seriesFor, day) {
+  const result={titleChanged:0,promotionChanged:0,activePromotion:0};
+  const seen=new Set();
+  for(const product of products||[]){
+    if(!product?.itemCode||seen.has(product.itemCode))continue;
+    seen.add(product.itemCode);
+    const points=(seriesFor(product)||[]).filter(point=>point.day<=day);
+    const current=points.find(point=>point.day===day), previous=points.filter(point=>point.day<day).at(-1);
+    if(!current)continue;
+    if(current.title!=null&&previous?.title!=null&&current.title!==previous.title)result.titleChanged++;
+    if(Array.isArray(current.hints)&&current.hints.length){
+      result.activePromotion++;
+      if(Array.isArray(previous?.hints)){
+        const currentLabel=[...current.hints].sort().join('\u0000'), previousLabel=[...previous.hints].sort().join('\u0000');
+        if(currentLabel!==previousLabel)result.promotionChanged++;
+      }
+    }
+  }
+  return result;
+}
 export function couponEstimate(price, rawText) {
   const text=String(rawText || '').normalize('NFKC');
   const conditions=text.match(/[^【】\[\]＼／。]{0,40}(?:クーポン|限定|以上|最大)[^【】\[\]＼／。]{0,55}/g)?.join(' · ') || text.slice(0,160);

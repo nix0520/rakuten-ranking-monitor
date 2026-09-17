@@ -139,8 +139,8 @@
       <details><summary>跨类目商品合并视图</summary><p>同一个商品只显示一次，集中查看最好排名和覆盖类目数。</p><div id="mergedProducts"></div></details>
       <details><summary>评论增长与评分变化</summary><div id="reviewGrowth"></div></details>
       <details><summary>商品标题修改记录</summary><p>每天完整日榜保存商品标题，超过30天后随日榜进入长期归档。上线前没有保存的标题无法补回。</p>
-        <div class="analysis-controls"><label>修改日期从<input id="titleExportStart" type="date"></label><label>到<input id="titleExportEnd" type="date"></label><button id="exportTitleChanges" type="button">按店铺导出标题变化CSV</button></div>
-        <p id="titleExportStatus" role="status"></p><div id="titleUpdates"></div>
+        <div class="analysis-controls"><label>店铺搜索<input id="titleShopSearch" type="search" placeholder="店铺名、店铺代码" autocomplete="off"></label><button id="searchTitleChanges" type="button">搜索</button><label>修改日期从<input id="titleExportStart" type="date"></label><label>到<input id="titleExportEnd" type="date"></label><button id="exportTitleChanges" type="button">按店铺导出标题变化CSV</button></div>
+        <p id="titleSearchStatus" role="status"></p><p id="titleExportStatus" role="status"></p><div id="titleUpdates"></div>
       </details>
       <details><summary>多商品日榜趋势对比</summary><p>按住Ctrl选择2～5款同类目商品。选项同时显示店铺名、商品编码和商品名。缺测会断线，浅黄色区域是你登记的活动日期。</p><select id="compareProducts" multiple size="6" aria-label="选择对比商品"></select><button id="drawMultiTrend" type="button">生成对比图</button><div id="multiTrend"></div></details>
       <details><summary>已确认活动日历</summary><div class="analysis-controls">

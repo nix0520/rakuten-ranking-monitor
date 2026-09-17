@@ -29,6 +29,14 @@ test('timeline gaps and unknown titles never fabricate changes or campaign dates
   assert.equal(A.titleChanges(series).length,0);
   assert.equal(A.activityComparison(series,'2026-09-03','2026-09-03')[0].observation,null);
 });
+test('shop change signals distinguish title changes, new promotions and ongoing promotions',()=>{
+  const products=[{itemCode:'s:1'},{itemCode:'s:2'},{itemCode:'s:2'}];
+  const histories={
+    's:1':[{day:'2026-09-16',title:'Old',hints:[]},{day:'2026-09-17',title:'New',hints:['30%OFFクーポン']}],
+    's:2':[{day:'2026-09-16',title:'Same',hints:['P10倍']},{day:'2026-09-17',title:'Same',hints:['P10倍']}]
+  };
+  assert.deepEqual(A.shopChangeSignals(products,p=>histories[p.itemCode],'2026-09-17'),{titleChanged:1,promotionChanged:1,activePromotion:2});
+});
 test('title change export groups all shops and marks observation gaps',()=>{
   const captures=[
     {aggregateDate:'2026-09-02',capturedAt:'2026-09-02T15:00:00+09:00',products:{'a:1':{itemName:'Old A',shopName:'Alpha',shopCode:'a',itemUrl:'https://item.rakuten.co.jp/a/1/'},'b:1':{itemName:'Same B',shopName:'Beta',shopCode:'b'}}},

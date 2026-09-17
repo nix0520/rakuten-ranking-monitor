@@ -11,7 +11,7 @@ const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 const trendDate = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit" });
-const analysis = createAnalysis({ state, $, escapeHtml, refreshView, formatStamp, sparkline });
+const analysis = createAnalysis({ state, $, escapeHtml, refreshView, formatStamp, sparkline, storage: window.localStorage });
 
 const KEYWORD_PHRASES = [
   "ノンワイヤー", "ナイトブラ", "脇高", "補正下着", "スポーツブラ", "ブラトップ",
