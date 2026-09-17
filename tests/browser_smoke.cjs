@@ -65,7 +65,14 @@ const server=http.createServer((req,res)=>{
     assert.match(await page.locator('#shopAnalysis').innerText(),/没有匹配/);
     await page.fill('#shopAnalysisSearch','');
     assert.match(await page.locator('#shopAnalysis').innerText(),/推测的商品角色与热度/);
-    assert.match(await page.locator('#shopAnalysis').innerText(),/标题修改：/);
+    const titleBadge=page.locator('#shopAnalysis .product-title-change').first();
+    assert.equal(await titleBadge.innerText(),'标题修改');
+    const detailButton=page.locator('#shopAnalysis .analysis-product-actions .analysis-detail-button').first();
+    const detailBox=await detailButton.boundingBox();
+    const badgeBox=await titleBadge.boundingBox();
+    assert.ok(detailBox&&badgeBox);
+    assert.ok(badgeBox.x>detailBox.x);
+    assert.ok(Math.abs((detailBox.y+detailBox.height/2)-(badgeBox.y+badgeBox.height/2))<2);
     assert.match(await page.locator('#shopOverview').innerText(),/排行/);
     await page.fill('#shopOverviewSearch','Test shop');await page.click('#searchShopOverview');
     assert.match(await page.locator('#shopOverviewSearchStatus').innerText(),/Test shop/);
