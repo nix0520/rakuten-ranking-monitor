@@ -79,6 +79,7 @@ const server=http.createServer((req,res)=>{
     assert.equal(await summaryLink.getAttribute('target'),'_blank');
     assert.equal(await page.locator('#dailyDigest [data-analysis-detail]').first().innerText(),'历史详情');
     assert.match(await page.locator('#titleUpdates').textContent(),/长期归档/);
+    await page.locator('#titleShopSearch').evaluate(input=>{input.closest('details').open=true;});
     await page.fill('#titleShopSearch','Test shop');await page.click('#searchTitleChanges');
     assert.match(await page.locator('#titleSearchStatus').innerText(),/Test shop/);
     await page.locator('#dailyDigest [data-analysis-detail]').first().click();
