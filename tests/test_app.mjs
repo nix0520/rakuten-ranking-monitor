@@ -88,6 +88,8 @@ test('shop overview headers toggle ascending and descending sorting', async () =
     {itemCode:'a:2',shopCode:'a',shopName:'Alpha',rank:8,change:1}
   ]}}; bindEvents(); refreshView();`);
   let html=a.element('#shopOverview').innerHTML;
+  assert.match(html,/<th>排行<\/th>/);
+  assert.match(html,/shop-overview-rank">1<\/td>/);
   assert.ok(html.indexOf('Alpha')<html.indexOf('Beta'));
   assert.match(html,/data-shop-sort="top10">前10<span aria-hidden="true">▼/);
   const panel=a.element('#analysisPanel');
@@ -99,6 +101,27 @@ test('shop overview headers toggle ascending and descending sorting', async () =
   html=a.element('#shopOverview').innerHTML;
   assert.ok(html.indexOf('Beta')<html.indexOf('Alpha'));
   assert.match(html,/data-shop-sort="name">店铺<span aria-hidden="true">▼/);
+});
+
+test('title record shop search filters displayed changes and watched shops show change badges', async () => {
+  const a=app();
+  await a.run(`state.dailyLatest={aggregateDate:'2026-09-17',generatedAt:'2026-09-17T15:00:00+09:00',categories:[{id:1,group:'bra',name:'Bra'}],rankings:{1:[
+    {itemCode:'alpha:1',shopCode:'alpha',shopName:'Alpha Store',itemName:'New Alpha 30%OFFクーポン',rank:1,promotionHints:['30%OFFクーポン']},
+    {itemCode:'beta:1',shopCode:'beta',shopName:'Beta Store',itemName:'New Beta',rank:2,promotionHints:[]}
+  ]}};
+  state.history={captures:[
+    {aggregateDate:'2026-09-16',capturedAt:'2026-09-16T15:00:00+09:00',genres:{1:{'alpha:1':3,'beta:1':4}},metrics:{1:{'alpha:1':{itemName:'Old Alpha',promotionHints:[]},'beta:1':{itemName:'Old Beta',promotionHints:[]}}}},
+    {aggregateDate:'2026-09-17',capturedAt:'2026-09-17T15:00:00+09:00',genres:{1:{'alpha:1':1,'beta:1':2}},metrics:{1:{'alpha:1':{itemName:'New Alpha 30%OFFクーポン',promotionHints:['30%OFFクーポン']},'beta:1':{itemName:'New Beta',promotionHints:[]}}}}
+  ]}; bindEvents(); refreshView();`);
+  a.element('#titleShopSearch').value='Alpha';
+  a.element('#searchTitleChanges').handlers.click();
+  assert.match(a.element('#titleUpdates').innerHTML,/Old Alpha/);
+  assert.doesNotMatch(a.element('#titleUpdates').innerHTML,/Old Beta/);
+  const panel=a.element('#analysisPanel');
+  panel.handlers.click({target:{closest:selector=>selector==='[data-watch-shop]'?{dataset:{watchShop:'alpha'}}:null}});
+  assert.match(a.element('#shopAnalysis').innerHTML,/标题修改 1/);
+  assert.match(a.element('#shopAnalysis').innerHTML,/新增\/变更活动线索 1/);
+  assert.match(a.element('#watchedShopTrends').innerHTML,/标题修改 1/);
 });
 
 test('shop analysis history opens for a product outside the current category filter', async () => {
