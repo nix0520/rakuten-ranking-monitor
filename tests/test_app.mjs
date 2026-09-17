@@ -91,6 +91,13 @@ test('shop overview headers toggle ascending and descending sorting', async () =
   assert.match(html,/<th>排行<\/th>/);
   assert.match(html,/shop-overview-rank">1<\/td>/);
   assert.ok(html.indexOf('Alpha')<html.indexOf('Beta'));
+  a.element('#shopOverviewSearch').value='Beta';
+  a.element('#searchShopOverview').handlers.click();
+  html=a.element('#shopOverview').innerHTML;
+  assert.match(html,/Beta/);assert.doesNotMatch(html,/Alpha/);
+  assert.match(a.element('#shopOverviewSearchStatus').textContent,/找到 1 家店铺/);
+  a.element('#shopOverviewSearch').value='';a.element('#searchShopOverview').handlers.click();
+  html=a.element('#shopOverview').innerHTML;
   assert.match(html,/data-shop-sort="top10">前10<span aria-hidden="true">▼/);
   const panel=a.element('#analysisPanel');
   panel.handlers.click({target:{closest:selector=>selector==='[data-shop-sort]'?{dataset:{shopSort:'name'}}:null}});
@@ -117,10 +124,11 @@ test('title record shop search filters displayed changes and watched shops show 
   a.element('#searchTitleChanges').handlers.click();
   assert.match(a.element('#titleUpdates').innerHTML,/Old Alpha/);
   assert.doesNotMatch(a.element('#titleUpdates').innerHTML,/Old Beta/);
-  const panel=a.element('#analysisPanel');
-  panel.handlers.click({target:{closest:selector=>selector==='[data-watch-shop]'?{dataset:{watchShop:'alpha'}}:null}});
   assert.match(a.element('#shopAnalysis').innerHTML,/标题修改 1/);
   assert.match(a.element('#shopAnalysis').innerHTML,/新增\/变更活动线索 1/);
+  assert.match(a.element('#shopAnalysis').innerHTML,/标题修改 2026-09-17/);
+  const panel=a.element('#analysisPanel');
+  panel.handlers.click({target:{closest:selector=>selector==='[data-watch-shop]'?{dataset:{watchShop:'alpha'}}:null}});
   assert.match(a.element('#watchedShopTrends').innerHTML,/标题修改 1/);
 });
 
