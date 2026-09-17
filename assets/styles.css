@@ -269,7 +269,8 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 .shop-change-badge.title{color:#8a3e00;background:#fff0df;border:1px solid #f0c58f}
 .shop-change-badge.promotion{color:#a00000;background:#fff0ef;border:1px solid #e8b3ad}
 .shop-change-badge.active{color:#17624c;background:#eaf8f2;border:1px solid #acdcca}
-.product-title-change{margin:7px 0 0 7px;vertical-align:middle}
+.analysis-product-actions{display:flex;align-items:center;gap:7px;flex-wrap:nowrap;margin-top:6px}
+.product-title-change{margin:0;white-space:nowrap}
 .shop-change-none{color:var(--muted);background:#f4f2ef;border:1px solid var(--line)}
 .analysis-controls label,.analysis-detail label{display:flex;flex-direction:column;gap:6px;font-size:13px;flex:1;min-width:140px}
 .analysis-controls input,.analysis-controls select,.analysis-detail input,.analysis-detail textarea,#compareProducts{border:1px solid #d9d2cc;border-radius:7px;padding:9px;font:inherit;background:white;color:#14212b;max-width:100%;min-width:0}
@@ -295,6 +296,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 .analysis-product-title{display:block;color:#17202a;font-weight:700;line-height:1.5;text-decoration:none;overflow-wrap:anywhere}
 a.analysis-product-title:hover{text-decoration:underline;color:#bf0000}
 .analysis-detail-button{display:inline-block!important;width:auto!important;margin-top:6px;padding:4px 8px!important;font-size:11px}
+.analysis-product-actions .analysis-detail-button{margin-top:0}
 .analysis-link-missing{color:#a16b33!important}
 .analysis-product small{overflow-wrap:anywhere}
 #compareProducts{width:100%;margin:10px 0}

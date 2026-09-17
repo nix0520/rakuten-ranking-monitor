@@ -44,7 +44,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const linkStatus=url ? '' : '<small class="analysis-link-missing">商品链接未记录</small>';
     return '<div class="analysis-product">'+linkedPicture+'<div>'+linkedTitle+'<small>'+
       esc(r.category.name)+' · '+esc(r.shopName||'店铺未记录')+' · '+esc(r.itemCode)+'</small>'+linkStatus+
-      '<button class="analysis-detail-button" type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">历史详情</button>'+marker+'</div></div>';
+      '<span class="analysis-product-actions"><button class="analysis-detail-button" type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">历史详情</button>'+marker+'</span></div></div>';
   };
   function save(next) {
     const clean=A.cleanNotebook(next);
@@ -110,7 +110,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   }
   function currentTitleChangeBadge(product) {
     const change=A.titleChanges(shopHistory(product)).find(entry=>entry.to===endDay()&&!entry.gap);
-    return change?'<span class="shop-change-badge title product-title-change">标题修改：'+esc(change.from)+' → '+esc(change.to)+'</span>':'';
+    return change?'<span class="shop-change-badge title product-title-change">标题修改</span>':'';
   }
   function renderShopAnalysis(rows) {
     const allShops=A.shopOverview(rows), query=shopAnalysisQuery.trim().toLocaleLowerCase('ja');

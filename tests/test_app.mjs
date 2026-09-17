@@ -128,7 +128,7 @@ test('title record shop search filters displayed changes and watched shops show 
   assert.match(a.element('#shopAnalysis').innerHTML,/标题修改 1/);
   assert.match(a.element('#shopAnalysis').innerHTML,/新增\/变更活动线索 1/);
   assert.match(a.element('#shopAnalysis').innerHTML,/标题修改 2026-09-17/);
-  assert.match(a.element('#shopAnalysis').innerHTML,/标题修改：2026-09-16 → 2026-09-17/);
+  assert.match(a.element('#shopAnalysis').innerHTML,/analysis-product-actions[^>]*>.*历史详情.*product-title-change">标题修改<\/span>/);
   await a.run("openDetail(state.rows.find(row=>row.itemCode==='alpha:1'))");
   const titleSection=a.element('#detailBody').innerHTML.split('<h3>商品标题修改记录</h3>')[1];
   assert.ok(titleSection.indexOf('2026-09-16')<titleSection.indexOf('2026-09-15'));
