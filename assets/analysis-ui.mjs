@@ -35,7 +35,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     try { const url=new URL(value); return ['http:','https:'].includes(url.protocol) ? esc(url.href) : ''; }
     catch { return ''; }
   };
-  const rowLink = r => {
+  const rowLink = (r, marker='') => {
     const image=safeImage(r.imageUrl), url=safeImage(r.itemUrl);
     const picture=image ? '<img src="'+image+'" alt="" loading="lazy" referrerpolicy="no-referrer">' : '<span class="analysis-image-empty" aria-hidden="true">画像なし</span>';
     const title=esc(r.itemName?.slice(0,65)||r.itemCode);
@@ -44,7 +44,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const linkStatus=url ? '' : '<small class="analysis-link-missing">商品链接未记录</small>';
     return '<div class="analysis-product">'+linkedPicture+'<div>'+linkedTitle+'<small>'+
       esc(r.category.name)+' · '+esc(r.shopName||'店铺未记录')+' · '+esc(r.itemCode)+'</small>'+linkStatus+
-      '<button class="analysis-detail-button" type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">历史详情</button></div></div>';
+      '<button class="analysis-detail-button" type="button" data-analysis-detail="'+esc(r.itemCode)+'" data-genre="'+esc(r.category.id)+'">历史详情</button>'+marker+'</div></div>';
   };
   function save(next) {
     const clean=A.cleanNotebook(next);
@@ -108,6 +108,10 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     else if(signals.activePromotion)badges.push('<span class="shop-change-badge active">活动线索进行中 '+signals.activePromotion+'</span>');
     return badges.join(' ');
   }
+  function currentTitleChangeBadge(product) {
+    const change=A.titleChanges(shopHistory(product)).find(entry=>entry.to===endDay()&&!entry.gap);
+    return change?'<span class="shop-change-badge title product-title-change">标题修改：'+esc(change.from)+' → '+esc(change.to)+'</span>':'';
+  }
   function renderShopAnalysis(rows) {
     const allShops=A.shopOverview(rows), query=shopAnalysisQuery.trim().toLocaleLowerCase('ja');
     const shops=query ? allShops.filter(shop=>`${shop.name} ${shop.key}`.toLocaleLowerCase('ja').includes(query)) : allShops;
@@ -132,7 +136,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
       '<div class="shop-change-signals">'+(signalBadges(signals)||'<span class="shop-change-none">本集计日暂未发现标题或活动线索变化</span>')+'</div>'+
       '<div class="shop-kpis">'+summary.map(([label,value])=>'<article><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></article>').join('')+'</div>'+
       '<p><strong>系统观察：</strong>中位价格 '+esc(profile.medianPrice==null?'未记录':amount(profile.medianPrice))+'；价格范围 '+esc(profile.minPrice==null?'未记录':amount(profile.minPrice)+'～'+amount(profile.maxPrice))+'；API积分加倍商品 '+esc(profile.pointed)+'款。当前热度较高的商品：'+esc(strongest)+'。</p>'+
-      '<h3>推测的商品角色与热度</h3>'+table(['商品','推测角色','推定热度','最好排名 / 覆盖','公开促销线索'],products.map(({product,role,reason,heat})=>[rowLink(product),'<strong>'+esc(role)+'</strong><small>'+esc(reason)+'</small>','<span class="heat heat-'+(heat.level==='高'?'high':heat.level==='中'?'mid':'low')+'">'+esc(heat.level+' '+heat.score)+'</span><small>'+esc(heat.reasons.join(' · ')||'信号不足')+'</small>',esc(product.bestRank+'位 / '+product.categoryCount+'类目'),esc((product.promotionHints||[]).join(' · ')||'未发现')]))+
+      '<h3>推测的商品角色与热度</h3>'+table(['商品','推测角色','推定热度','最好排名 / 覆盖','公开促销线索'],products.map(({product,role,reason,heat})=>[rowLink(product,currentTitleChangeBadge(product)),'<strong>'+esc(role)+'</strong><small>'+esc(reason)+'</small>','<span class="heat heat-'+(heat.level==='高'?'high':heat.level==='中'?'mid':'low')+'">'+esc(heat.level+' '+heat.score)+'</span><small>'+esc(heat.reasons.join(' · ')||'信号不足')+'</small>',esc(product.bestRank+'位 / '+product.categoryCount+'类目'),esc((product.promotionHints||[]).join(' · ')||'未发现')]))+
       '<small>商品角色和热度是根据排名、类目覆盖、评论变化与促销线索推测，不代表真实销量。</small>'+
       '<h3>角色结构</h3>'+textTable(['推测角色','商品数'],roleCounts)+
       '<h3>店铺促销观察时间轴</h3>'+table(['商品','首次观察','最后观察','公开文字线索','标题变化'],promotionRows.map(({product,period,titleChanges})=>[rowLink(product),esc(period.start),esc(period.end),esc(period.label),titleChanges.length?titleChanges.map(change=>'<span class="shop-change-badge title">标题修改 '+esc(change.to)+'</span>').join(' '):'<span class="shop-change-none">无记录</span>']))+
@@ -222,13 +226,13 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const events=notebook.events.filter(e=>e.start<=endDay()&&e.end>=(points[0]?.day||endDay()));
     return '<section class="analysis-detail"><h3>促销与积分追溯</h3>'+pointSources(row,points)+
       '<p>'+esc(estimate.amount===null?estimate.label:estimate.label+' '+amount(estimate.amount))+'</p><p>原文条件：'+esc(estimate.conditions||'未记录')+'</p>'+
-      textTable(['首次观察','最后观察','记录的优惠文字'],periods.map(p=>[p.start,p.end,p.label]))+
+      textTable(['首次观察','最后观察','记录的优惠文字'],periods.slice().sort((a,b)=>b.end.localeCompare(a.end)).map(p=>[p.start,p.end,p.label]))+
       '<p>上述日期是观察范围。标题注明的期限保留在下面原文中，未注明年份的日期不自动补全年份；未观察到文案不等于优惠已经结束。</p>'+
-      '<details><summary>各日活动期限及条件原文</summary>'+textTable(['集计日','标题与Catch Copy原文'],points.map(p=>[p.day,p.text]))+'</details>'+
+      '<details><summary>各日活动期限及条件原文</summary>'+textTable(['集计日','标题与Catch Copy原文'],points.slice().reverse().map(p=>[p.day,p.text]))+'</details>'+
       '<h3>活动前后对比</h3><div class="analysis-controls"><label>活动开始<input id="activityStart" type="date" value="'+esc(endDay())+'"></label><label>活动结束<input id="activityEnd" type="date" value="'+esc(endDay())+'"></label><button id="compareActivity" type="button">比较</button></div><div id="activityResult"></div><small>比较实际保存值，不插值；活动与排名同变不证明因果关系。</small>'+
-      '<h3>商品标题修改记录</h3>'+textTable(['上次观察','本次观察','原标题','新标题'],changes.map(c=>[c.from,c.to,c.before,c.after]))+
+      '<h3>商品标题修改记录</h3>'+textTable(['上次观察','本次观察','原标题','新标题'],changes.slice().reverse().map(c=>[c.from,c.to,c.before,c.after]))+
       '<h3>跨类目排名 / 采集范围</h3>'+textTable(['类目','选定集计日状态'],(state.latest?.categories||[]).map(c=>[c.name,A.coverageLabel(state.viewSnapshot,c.id,row.itemCode)]))+
-      '<h3>已确认活动日历</h3>'+textTable(['活动','开始','结束'],events.map(e=>[e.title,e.start,e.end]))+
+      '<h3>已确认活动日历</h3>'+textTable(['活动','开始','结束'],events.slice().sort((a,b)=>b.end.localeCompare(a.end)).map(e=>[e.title,e.start,e.end]))+
       '<h3>收藏分组、备注与相似款标签</h3><div class="analysis-controls"><label>分组<input id="productGroup" maxlength="60" value="'+esc(meta.group||'')+'" placeholder="直接竞品 / 价格参考"></label><label>标签（逗号分隔）<input id="productTags" value="'+esc((meta.tags||[]).join(', '))+'" placeholder="无钢圈, 厚杯, 套装"></label></div><label>备注<textarea id="productNote" maxlength="2000">'+esc(meta.note||'')+'</textarea></label><button id="saveProductNote" type="button">保存分组与备注</button>'+
       '<details><summary>登记商品页已核对的积分</summary><p>仅登记你实际查看的商品页，不代表自动抓取或长期有效。</p><div class="analysis-controls"><label>倍率<input id="pagePointRate" type="number" min="1" max="100"></label><label>核对时间（日本时间）<input id="pagePointAt" type="datetime-local"></label><label>商品页链接<input id="pagePointUrl" type="url" value="'+esc(row.itemUrl||'')+'"></label><button id="savePagePoints" type="button">保存核对记录</button></div></details><p id="analysisDetailStatus" role="status"></p></section>';
   }
