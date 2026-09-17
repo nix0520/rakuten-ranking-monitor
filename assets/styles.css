@@ -262,6 +262,7 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); 
 .analysis-panel summary{cursor:pointer;font-weight:700}
 .analysis-panel p,.analysis-detail p{font-size:13px;color:#596673;line-height:1.8}
 .analysis-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+.shop-overview-search{margin:12px 0 4px;max-width:720px}
 .shop-overview-rank{font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums}
 .shop-change-signals{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0 14px}
 .shop-change-badge,.shop-change-none{display:inline-flex;align-items:center;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:800}

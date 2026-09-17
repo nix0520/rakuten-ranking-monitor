@@ -124,7 +124,10 @@
       <p class="eyebrow">COMPETITOR ANALYSIS</p><h2>竞品分析与每日摘要</h2><p id="analysisBasis"></p>
       <details open><summary>每日变化摘要</summary><div id="dailyDigest"></div></details>
       <details><summary>收藏商品变化汇总</summary><div id="watchDigest"></div></details>
-      <details open><summary>竞品店铺总览</summary><div id="shopOverview"></div></details>
+      <details open><summary>竞品店铺总览</summary>
+        <div class="analysis-controls shop-overview-search"><label>搜索店铺<input id="shopOverviewSearch" type="search" placeholder="店铺名、店铺代码" autocomplete="off"></label><button id="searchShopOverview" type="button">搜索</button></div>
+        <p id="shopOverviewSearchStatus" role="status"></p><div id="shopOverview"></div>
+      </details>
       <details id="shop-analysis-section" open><summary>单店深度分析</summary>
         <p>基于公开排行榜记录判断店铺的排名覆盖、主推款、促销节奏和评论变化。真实销量与准确库存不是公开数据，不会虚构。</p>
         <div class="analysis-controls">

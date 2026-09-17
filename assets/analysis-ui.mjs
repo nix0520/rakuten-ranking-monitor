@@ -5,6 +5,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   let notebook = A.readNotebook(storage), currentRow = null, busy = false;
   let selectedShopKey = '';
   let shopAnalysisQuery = '';
+  let shopOverviewQuery = '';
   let titleShopQuery = '';
   let shopOverviewSort = {key:'top10', direction:'desc'};
   const titleProductCache = new Map();
@@ -84,14 +85,18 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
   }
   function renderShopOverview(rows) {
     const columns=[['name','店铺'],['items','上榜商品'],['top10','前10'],['top100','前100'],['up','上涨'],['down','下跌']];
-    const shops=A.sortShopOverview(A.shopOverview(rows),shopOverviewSort.key,shopOverviewSort.direction);
+    const query=shopOverviewQuery.trim().toLocaleLowerCase('ja');
+    const allShops=A.shopOverview(rows);
+    const matched=query?allShops.filter(shop=>`${shop.name} ${shop.key}`.toLocaleLowerCase('ja').includes(query)):allShops;
+    const shops=A.sortShopOverview(matched,shopOverviewSort.key,shopOverviewSort.direction);
     const headings=columns.map(([key,label])=>{
       const active=key===shopOverviewSort.key, arrow=active?(shopOverviewSort.direction==='asc'?'▲':'▼'):'';
       const aria=active?(shopOverviewSort.direction==='asc'?'ascending':'descending'):'none';
       return '<th aria-sort="'+aria+'"><button class="analysis-sort-button" type="button" data-shop-sort="'+key+'">'+esc(label)+'<span aria-hidden="true">'+arrow+'</span></button></th>';
     }).join('');
     const body=shops.length?shops.map((s,index)=>'<tr><td class="shop-overview-rank">'+(index+1)+'</td>'+columns.map(([key])=>'<td>'+esc(s[key])+'</td>').join('')+'</tr>').join(''):'<tr><td colspan="'+(columns.length+1)+'">該当する記録がありません。</td></tr>';
-    $('#shopOverview').innerHTML='<div class="analysis-scroll"><table class="analysis-table"><thead><tr><th>排行</th>'+headings+'</tr></thead><tbody>'+body+'</tbody></table></div><small>排行序号按当前排序结果重新编号；表头可点击切换升序/降序。覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
+    $('#shopOverviewSearchStatus').textContent=query?'店铺搜索“'+shopOverviewQuery.trim()+'”：找到 '+shops.length+' 家店铺。':'显示全部 '+allShops.length+' 家店铺。';
+    $('#shopOverview').innerHTML='<div class="analysis-scroll"><table class="analysis-table"><thead><tr><th>排行</th>'+headings+'</tr></thead><tbody>'+body+'</tbody></table></div><small>排行序号按当前搜索与排序结果重新编号；表头可点击切换升序/降序。覆盖当前日榜全部34个类目并按商品去重；在不同类目一升一降时，会分别计入上涨和下跌。</small>';
   }
   function shopSignals(profile) {
     return A.shopChangeSignals(profile.products.map(entry=>entry.product),shopHistory,endDay());
@@ -115,17 +120,22 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     const summary=[['上榜商品',profile.itemCount],['覆盖类目',profile.categoryCount],['前10名',profile.top10],['前30名',profile.top30],['前100名',profile.top100],['上涨商品',profile.rising],['新进榜',profile.entered],['有促销线索',profile.promoted]];
     const products=profile.products.slice().sort((a,b)=>b.heat.score-a.heat.score||a.product.bestRank-b.product.bestRank);
     const roleCounts=[...new Map(products.map(p=>[p.role,0])).keys()].map(role=>[role,products.filter(p=>p.role===role).length]);
-    const promotionRows=products.flatMap(({product})=>A.promotionTimeline(shopHistory(product)).filter(p=>p.known&&p.label!=='販促文言なし').map(p=>({product,period:p}))).sort((a,b)=>b.period.end.localeCompare(a.period.end)).slice(0,50);
+    const promotionRows=products.flatMap(({product})=>{
+      const history=shopHistory(product), changes=A.titleChanges(history);
+      return A.promotionTimeline(history).filter(p=>p.known&&p.label!=='販促文言なし').map(period=>({
+        product,period,titleChanges:changes.filter(change=>change.to>=period.start&&change.to<=period.end)
+      }));
+    }).sort((a,b)=>b.period.end.localeCompare(a.period.end)).slice(0,50);
     const strongest=products.slice(0,3).map(p=>p.product.itemName?.slice(0,28)||p.product.itemCode).join('、')||'暂无';
-    const watched=watchedShops.has(profile.key), signals=watched?shopSignals(profile):null;
+    const watched=watchedShops.has(profile.key), signals=shopSignals(profile);
     $('#shopAnalysis').innerHTML='<div class="shop-analysis-heading"><h3>'+heading+'</h3><div><small>店铺代码：'+esc(profile.key)+'</small> <button type="button" data-watch-shop="'+esc(profile.key)+'">'+(watchedShops.has(profile.key)?'★ 已关注店铺':'☆ 关注店铺')+'</button></div></div>'+
-      (watched?'<div class="shop-change-signals">'+(signalBadges(signals)||'<span class="shop-change-none">本集计日暂未发现标题或活动线索变化</span>')+'</div>':'')+
+      '<div class="shop-change-signals">'+(signalBadges(signals)||'<span class="shop-change-none">本集计日暂未发现标题或活动线索变化</span>')+'</div>'+
       '<div class="shop-kpis">'+summary.map(([label,value])=>'<article><span>'+esc(label)+'</span><strong>'+esc(value)+'</strong></article>').join('')+'</div>'+
       '<p><strong>系统观察：</strong>中位价格 '+esc(profile.medianPrice==null?'未记录':amount(profile.medianPrice))+'；价格范围 '+esc(profile.minPrice==null?'未记录':amount(profile.minPrice)+'～'+amount(profile.maxPrice))+'；API积分加倍商品 '+esc(profile.pointed)+'款。当前热度较高的商品：'+esc(strongest)+'。</p>'+
       '<h3>推测的商品角色与热度</h3>'+table(['商品','推测角色','推定热度','最好排名 / 覆盖','公开促销线索'],products.map(({product,role,reason,heat})=>[rowLink(product),'<strong>'+esc(role)+'</strong><small>'+esc(reason)+'</small>','<span class="heat heat-'+(heat.level==='高'?'high':heat.level==='中'?'mid':'low')+'">'+esc(heat.level+' '+heat.score)+'</span><small>'+esc(heat.reasons.join(' · ')||'信号不足')+'</small>',esc(product.bestRank+'位 / '+product.categoryCount+'类目'),esc((product.promotionHints||[]).join(' · ')||'未发现')]))+
       '<small>商品角色和热度是根据排名、类目覆盖、评论变化与促销线索推测，不代表真实销量。</small>'+
       '<h3>角色结构</h3>'+textTable(['推测角色','商品数'],roleCounts)+
-      '<h3>店铺促销观察时间轴</h3>'+table(['商品','首次观察','最后观察','公开文字线索'],promotionRows.map(({product,period})=>[rowLink(product),esc(period.start),esc(period.end),esc(period.label)]))+
+      '<h3>店铺促销观察时间轴</h3>'+table(['商品','首次观察','最后观察','公开文字线索','标题变化'],promotionRows.map(({product,period,titleChanges})=>[rowLink(product),esc(period.start),esc(period.end),esc(period.label),titleChanges.length?titleChanges.map(change=>'<span class="shop-change-badge title">标题修改 '+esc(change.to)+'</span>').join(' '):'<span class="shop-change-none">无记录</span>']))+
       '<p class="analysis-limit"><strong>数据边界：</strong>竞争店铺的真实销量、订单数和准确库存不公开。商品页若公开显示售罄或“剩余少量”，后续可记录为公开库存状态，但不会推算库存件数。</p>';
 
     const previous=[...($('#shopCompareSelect').selectedOptions||[])].map(o=>o.value);
@@ -381,6 +391,9 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     $('#drawMultiTrend').addEventListener('click',compareProducts);
     $('#shopAnalysisSelect').addEventListener('change',event=>{selectedShopKey=event.target.value;render();});
     $('#shopAnalysisSearch').addEventListener('input',event=>{shopAnalysisQuery=event.target.value;renderShopAnalysis(shopRows());});
+    const searchShopOverview=()=>{shopOverviewQuery=$('#shopOverviewSearch').value.trim();renderShopOverview(shopRows());};
+    $('#searchShopOverview').addEventListener('click',searchShopOverview);
+    $('#shopOverviewSearch').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchShopOverview();}});
     const searchTitleChanges=()=>{titleShopQuery=$('#titleShopSearch').value.trim();render();};
     $('#searchTitleChanges').addEventListener('click',searchTitleChanges);
     $('#titleShopSearch').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();searchTitleChanges();}});

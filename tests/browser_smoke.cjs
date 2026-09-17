@@ -66,6 +66,8 @@ const server=http.createServer((req,res)=>{
     await page.fill('#shopAnalysisSearch','');
     assert.match(await page.locator('#shopAnalysis').innerText(),/推测的商品角色与热度/);
     assert.match(await page.locator('#shopOverview').innerText(),/排行/);
+    await page.fill('#shopOverviewSearch','Test shop');await page.click('#searchShopOverview');
+    assert.match(await page.locator('#shopOverviewSearchStatus').innerText(),/Test shop/);
     assert.match(await page.locator('#shopAnalysis').innerText(),/真实销量、订单数和准确库存不公开/);
     await page.locator('#shopAnalysis [data-watch-shop]').click();
     assert.match(await page.locator('#watchedShopTrends').innerText(),/Test shop/);
