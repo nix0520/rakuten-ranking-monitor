@@ -324,7 +324,18 @@ class RankingTests(unittest.TestCase):
 
     def test_fixture_cli_output_shape(self):
         with tempfile.TemporaryDirectory() as directory:
-            args = fetch.parse_args(["--fixture", str(ROOT / "tests" / "fixtures" / "api_page.json"), "--output-dir", directory])
+            fixture = json.loads(
+                (ROOT / "tests" / "fixtures" / "api_page.json").read_text(encoding="utf-8")
+            )
+            # Keep this shape test independent of the wall clock. A permanently
+            # dated fixture eventually falls outside the rolling 30-day history
+            # window and is correctly archived instead of appearing in captures.
+            fixture["lastBuildDate"] = datetime.now(fetch.JST).replace(microsecond=0).isoformat()
+            fixture_path = Path(directory) / "api_page.json"
+            fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
+            args = fetch.parse_args([
+                "--fixture", str(fixture_path), "--output-dir", directory,
+            ])
             fetch.run(args)
             latest = json.loads((Path(directory) / "latest.json").read_text(encoding="utf-8"))
             history = json.loads((Path(directory) / "history.json").read_text(encoding="utf-8"))
