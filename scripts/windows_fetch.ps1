@@ -11,12 +11,24 @@ $mutex = New-Object System.Threading.Mutex($false, "RakutenRankingMonitorFetch")
 $mutexAcquired = $false
 try {
     try {
-        $mutexAcquired = $mutex.WaitOne((New-TimeSpan -Hours 2))
+        # A realtime snapshot is disposable while a daily collection is active.
+        # Do not queue it ahead of the hourly daily recovery task.
+        $mutexWait = if ($Mode -eq "realtime") {
+            New-TimeSpan -Seconds 1
+        }
+        else {
+            New-TimeSpan -Minutes 55
+        }
+        $mutexAcquired = $mutex.WaitOne($mutexWait)
     }
     catch [System.Threading.AbandonedMutexException] {
         $mutexAcquired = $true
     }
     if (-not $mutexAcquired) {
+        if ($Mode -eq "realtime") {
+            Write-Host "Another ranking fetch is running; realtime fetch skipped."
+            return
+        }
         throw "Timed out waiting for another ranking fetch to finish."
     }
 

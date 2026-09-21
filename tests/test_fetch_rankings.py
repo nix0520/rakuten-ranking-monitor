@@ -124,6 +124,21 @@ class RankingTests(unittest.TestCase):
         self.assertNotIn("Accesskey", captured["headers"])
         self.assertEqual(captured["timeout"], 30)
 
+    def test_daily_category_stops_before_request_after_deadline(self):
+        calls = []
+
+        def request(*_args, **_kwargs):
+            calls.append(True)
+            return {"Items": []}
+
+        with self.assertRaisesRegex(TimeoutError, "safe runtime limit"):
+            fetch.fetch_category(
+                {"id": 110854}, "app", "key", request,
+                max_rank=1000,
+                deadline=datetime.now(fetch.JST) - timedelta(seconds=1),
+            )
+        self.assertEqual(calls, [])
+
     def test_jst_falls_back_without_system_tzdata(self):
         def missing_zone(_key):
             raise fetch.ZoneInfoNotFoundError("missing tzdata")
@@ -324,18 +339,11 @@ class RankingTests(unittest.TestCase):
 
     def test_fixture_cli_output_shape(self):
         with tempfile.TemporaryDirectory() as directory:
-            fixture = json.loads(
-                (ROOT / "tests" / "fixtures" / "api_page.json").read_text(encoding="utf-8")
-            )
-            # Keep this shape test independent of the wall clock. A permanently
-            # dated fixture eventually falls outside the rolling 30-day history
-            # window and is correctly archived instead of appearing in captures.
+            fixture = json.loads((ROOT / "tests" / "fixtures" / "api_page.json").read_text(encoding="utf-8"))
             fixture["lastBuildDate"] = datetime.now(fetch.JST).replace(microsecond=0).isoformat()
             fixture_path = Path(directory) / "api_page.json"
             fixture_path.write_text(json.dumps(fixture), encoding="utf-8")
-            args = fetch.parse_args([
-                "--fixture", str(fixture_path), "--output-dir", directory,
-            ])
+            args = fetch.parse_args(["--fixture", str(fixture_path), "--output-dir", directory])
             fetch.run(args)
             latest = json.loads((Path(directory) / "latest.json").read_text(encoding="utf-8"))
             history = json.loads((Path(directory) / "history.json").read_text(encoding="utf-8"))
