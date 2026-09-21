@@ -39,6 +39,7 @@ MAX_PAGES = 34
 HISTORY_DAYS = 30
 DAILY_COLLECTION_VERSION = 2
 COUPON_HISTORY_VERSION = 3
+DAILY_MAX_RUNTIME_MINUTES = 45
 COUPON_DETAIL_PATTERNS = (
     re.compile(r"(?:最大\s*)?\d{1,3}(?:\.\d+)?\s*%\s*OFF\s*クーポン", re.IGNORECASE),
     re.compile(r"(?:最大\s*)?[¥￥]?\s*\d{1,3}(?:,\d{3})*\s*円\s*(?:OFF|割引|引き|値引き)\s*クーポン", re.IGNORECASE),
@@ -279,6 +280,7 @@ def fetch_category(
     max_rank: int = MAX_RANK,
     period: str | None = None,
     expected_date: str | None = None,
+    deadline: datetime | None = None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     collected: list[dict[str, Any]] = []
     source_build_at: str | None = None
@@ -287,6 +289,8 @@ def fetch_category(
     seen_codes: set[str] = set()
     for page in range(1, max_pages + 1):
         for attempt in range(3 if full_daily else 1):
+            if deadline is not None and datetime.now(JST) >= deadline:
+                raise TimeoutError("Daily collection reached its safe runtime limit")
             payload = request_fn(
                 int(category["id"]), page, application_id, access_key, period=period
             )
@@ -929,11 +933,12 @@ def _run(args: argparse.Namespace, expected_daily_date: str | None = None) -> No
     resumable = mode == "daily" and (not args.fixture or expected_daily_date)
     if resumable:
         day = expected_daily_date or datetime.now(JST).date().isoformat()
+        deadline = datetime.now(JST) + timedelta(minutes=DAILY_MAX_RUNTIME_MINUTES)
         def fetch_one(category):
             return fetch_category(
                 category, application_id, access_key, request_fn,
                 sleep_fn=(lambda _seconds: None) if args.fixture else time.sleep,
-                max_rank=MAX_RANK, expected_date=day,
+                max_rank=MAX_RANK, expected_date=day, deadline=deadline,
             )
         rankings, source_build_at, failed, full_status = collect_daily(
             categories, output_dir, day, DAILY_COLLECTION_VERSION, fetch_one,
