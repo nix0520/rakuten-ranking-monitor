@@ -2,7 +2,7 @@ import { WATCH_KEY, jstDay, dailySeries, couponPeriods, filterAndSort, readWatch
 import { archiveSnapshots, referenceProducts, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist as watchlistJson } from "./history-tools.mjs";
 import { createAnalysis } from "./analysis-ui.mjs";
 
-const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, group: "bra", category: "all", query: "", shopQuery: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "", page: 1, pageSize: 50 };
+const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, collectionStatus: null, group: "bra", category: "all", query: "", shopQuery: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "", page: 1, pageSize: 50 };
 try { state.watchlist = readWatchlist(window.localStorage); } catch { /* Storage can be disabled. */ }
 const SAVED_VIEWS_KEY = "rakuten-ranking-saved-views-v1";
 let savedViews = [];
@@ -221,7 +221,7 @@ function couponObservation(row) {
   if (!day) return "";
   const periods = couponPeriods(dailySeries(
     state.archive?.length ? state.archive : state.history?.captures || [],
-    row.category.id, row.itemCode, 30
+    row.category.id, row.itemCode, 30, Date.parse(`${day}T23:59:59+09:00`)
   )).filter(period => period.days.includes(day));
   if (!periods.length) return "";
   const ranges = periods.map(period => period.start === period.end
@@ -349,6 +349,10 @@ function renderHistoryControls() {
 
 function renderHealth() {
   const health = dataHealth(state.dailyLatest, state.realtimeLatest, state.updateLog);
+  const collection = state.collectionStatus;
+  const collectionMatches = collection?.aggregateDate === health.publishedDay;
+  const collectionComplete = collectionMatches && collection.status === "complete" &&
+    Number(collection.completed) === Number(collection.total) && Number(collection.total) > 0;
   let title, detail, level;
   if (state.mode === "daily") {
     const labels = { published: "今日の日榜は公開済み / 今日已更新", incomplete: "日榜の一部ジャンルが欠測 / 部分类目数据缺失，待重新采集", pending: "新日榜を検出・自動取得対象 / 已检测新日榜，待自动采集完成", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
@@ -367,6 +371,11 @@ function renderHealth() {
       level = "bad";
       detail += ` 同じ集計日の観測よりデータが不足：${health.missingGenres.join("、")}。次回の日榜探測で再取得を試みます。前日の順位を今日の値として補完しません。`;
     }
+    if (health.dailyState === "unknown" && collectionComplete && !health.missingGenres.length) {
+      title = "最新日榜の取得完了 / 最新日榜采集完整";
+      level = "good";
+      detail = `公開日榜の集計日：${health.publishedDay}。${collection.completed}/${collection.total}ジャンルを完全取得済みです。今日の日榜切替はまだ直近の探測記録がないため、次回の予定時刻に確認します。`;
+    }
   } else {
     title = { fresh: "リアルタイムデータは新鮮 / 实时数据正常", stale: "リアルタイム取得から45分超 / 实时记录已过期", unknown: "リアルタイム取得記録なし", clock: "取得時刻が未来 / 请检查电脑时间" }[health.realtimeState];
     level = health.realtimeState === "fresh" ? "good" : "bad";
@@ -375,11 +384,20 @@ function renderHealth() {
   $("#dataHealth").dataset.level = level;
   $("#healthTitle").textContent = title;
   $("#healthDetail").textContent = detail;
-  $("#healthTiming").textContent = `最終日榜観測：${formatStamp(health.lastObservation)}（API集計日 ${health.observedDay || "不明"}） · 完全日榜取得：${formatStamp(state.dailyLatest?.generatedAt)} · リアルタイム取得：${formatStamp(health.realtimeAt)} · 再読込は保存データの読込のみで、楽天API取得を開始しません。${state.history?.failures?.length ? ` 履歴${state.history.failures.length}件の読込に失敗。比較対象に使いません。` : ""}`;
+  $("#healthTiming").textContent = `最終日榜観測：${formatStamp(health.lastObservation)}（API集計日 ${health.observedDay || "不明"}） · 完全日榜取得：${formatStamp(state.dailyLatest?.generatedAt)}${collectionMatches ? `（${collection.completed}/${collection.total}ジャンル・${collection.status}）` : ""} · リアルタイム取得：${formatStamp(health.realtimeAt)} · 再読込は保存データの読込のみで、楽天API取得を開始しません。${state.history?.failures?.length ? ` 履歴${state.history.failures.length}件の読込に失敗。比較対象に使いません。` : ""}`;
+}
+
+function renderCollectionSummary() {
+  const collection = state.collectionStatus;
+  $("#collectionCount").textContent = collection ? `${collection.completed}/${collection.total}` : "—";
+  $("#collectionCountDetail").textContent = collection
+    ? `${collection.aggregateDate || "集計日不明"} · ${collection.status === "complete" ? "完了" : collection.status}`
+    : "采集记录未读取";
 }
 
 function render() {
   renderHistoryControls(); renderHealth();
+  renderCollectionSummary();
   renderKeywords();
   renderShopSearchOptions();
   state.rows = visibleRows(filteredRows());
@@ -402,9 +420,10 @@ function render() {
   const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Tokyo" }).format(new Date());
   const updateDay = (state.updateLog?.days || []).find((day) => day.date === today);
   const detected = updateDay ? rolloverWindow(updateDay).first?.capturedAt : null;
-  $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜検出時刻";
-  $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : (detected ? dateTime.format(new Date(detected)) : "判定待ち");
-  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : (updateDay?.aggregateDate ? `集計日 ${updateDay.aggregateDate}` : "15:00完全取得・未完了時は16:00から毎時確認");
+  $("#switchLabel").textContent = state.mode === "realtime" ? "リアルタイム元データ" : "日榜取得完了";
+  const completedAt = state.collectionStatus?.updatedAt || state.dailyLatest?.generatedAt;
+  $("#dailySwitch").textContent = state.mode === "realtime" ? (state.latest?.sourceBuildAt ? dateTime.format(new Date(state.latest.sourceBuildAt)) : "取得待ち") : formatStamp(completedAt);
+  $("#dailySwitchDetail").textContent = state.mode === "realtime" ? "楽天API period=realtime" : `${detected ? `初回検出 ${dateTime.format(new Date(detected))} · ` : ""}集計日 ${state.collectionStatus?.aggregateDate || state.dailyLatest?.aggregateDate || "不明"}`;
   const selected = selectedCategories();
   const groupNames = { bra: "Bra", shorts: "ショーツ" };
   $("#categoryPath").textContent = selected.length === 1 ? `${selected[0].tracking} · ${selected[0].path}` : `${groupNames[state.group] || state.group}グループ · ${selected.length}ジャンル`;
@@ -471,7 +490,7 @@ async function openDetail(row) {
     const points = trendPoints(row.category.id, row.itemCode);
     const coupons = couponPeriods(dailySeries(
       state.archive?.length ? state.archive : state.history?.captures || [],
-      row.category.id, row.itemCode, 30
+      row.category.id, row.itemCode, 30, Date.parse(`${row.targetDate || state.dailyLatest?.aggregateDate}T23:59:59+09:00`)
     ));
     const couponHistory = coupons.length
       ? `<section class="metric-chart"><h3>クーポン検出履歴</h3><ul class="event-list">${coupons.slice().sort((a,b)=>b.end.localeCompare(a.end)).map(period => `<li><strong>${escapeHtml(period.label)}</strong> — ${period.start === period.end ? `${period.start}に検出` : `${period.start}～${period.end}に連続検出`}</li>`).join("")}</ul><p>商品名・キャッチコピーに同じ券文言が記録された集計日の範囲です。実際の配布開始・終了日時とは限りません。</p></section>`
@@ -685,6 +704,8 @@ async function checkPublication() {
     const statusResponse = await fetch("data/collection-status.json", {cache:"no-store"});
     if (statusResponse.ok) {
       state.collectionStatus = await statusResponse.json();
+      renderHealth();
+      renderCollectionSummary();
       analysis.render();
     }
     const manifestResponse = await fetch("data/publication.json", {cache:"no-store"});
@@ -711,7 +732,7 @@ async function checkPublication() {
 
 async function init() {
   try {
-    const [latestResponse, historyResponse, updateResponse, realtimeResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" }), fetch("data/daily-update-log.json", { cache: "no-store" }), fetch("data/realtime/latest.json", { cache: "no-store" })]);
+    const [latestResponse, historyResponse, updateResponse, realtimeResponse, collectionResponse] = await Promise.all([fetch("data/latest.json", { cache: "no-store" }), fetch("data/history.json", { cache: "no-store" }), fetch("data/daily-update-log.json", { cache: "no-store" }), fetch("data/realtime/latest.json", { cache: "no-store" }), fetch("data/collection-status.json", { cache: "no-store" })]);
     if (!latestResponse.ok || !historyResponse.ok) throw new Error("ランキングデータを取得できませんでした。");
     const [latest, historyIndex] = await Promise.all([latestResponse.json(), historyResponse.json()]);
     state.dailyLatest = latest;
@@ -719,6 +740,7 @@ async function init() {
     state.latest = state.dailyLatest;
     state.history = await loadHistory(historyIndex);
     state.updateLog = updateResponse.ok ? await updateResponse.json() : { days: [] };
+    state.collectionStatus = collectionResponse.ok ? await collectionResponse.json() : null;
     if (!state.latest.generatedAt) {
       $("#errorBox").hidden = false;
       $("#errorBox").textContent = "初回データ取得前です。GitHub Actionsを手動実行するとランキングが表示されます。";
