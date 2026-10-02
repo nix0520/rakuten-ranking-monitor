@@ -11,6 +11,12 @@ const $ = (selector) => document.querySelector(selector);
 const yen = new Intl.NumberFormat("ja-JP", { style: "currency", currency: "JPY", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 const trendDate = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit" });
+const ARCHIVE_DATA_BASE = "https://raw.githubusercontent.com/nix0520/rakuten-ranking-monitor/main/data/";
+async function fetchDataFile(path, options = { cache: "no-store" }) {
+  const local = await fetch(`data/${path}`, options);
+  if (local.ok || !path.startsWith("archive/")) return local;
+  return fetch(`${ARCHIVE_DATA_BASE}${path}`, options);
+}
 const analysis = createAnalysis({ state, $, escapeHtml, refreshView, formatStamp, sparkline, storage: window.localStorage });
 
 const KEYWORD_PHRASES = [
@@ -303,7 +309,7 @@ async function refreshView() {
       try {
         if (!/^(history-products|archive\/products)\/\d{4}-\d{2}-\d{2}\.json$/.test(target.productsFile)) throw Error('invalid snapshot path');
         if (!productSnapshots.has(target.productsFile)) {
-          const response = await fetch(`data/${target.productsFile}`, { cache: "no-store" });
+          const response = await fetchDataFile(target.productsFile, { cache: "no-store" });
           if (!response.ok) throw Error('missing product snapshot');
           const payload = await response.json();
           if (!payload.products || typeof payload.products !== "object" || Array.isArray(payload.products)) throw Error('invalid snapshot');

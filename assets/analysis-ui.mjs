@@ -2,6 +2,12 @@ import * as A from './analysis-tools.mjs';
 import { snapshotRows } from './history-tools.mjs';
 
 export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatStamp, sparkline, storage=globalThis.localStorage}) {
+  const archiveBase='https://raw.githubusercontent.com/nix0520/rakuten-ranking-monitor/main/data/';
+  const fetchDataFile=async path=>{
+    const local=await fetch('data/'+path,{cache:'no-store'});
+    if(local.ok||!path.startsWith('archive/'))return local;
+    return fetch(archiveBase+path,{cache:'no-store'});
+  };
   let notebook = A.readNotebook(storage), currentRow = null, busy = false;
   let selectedShopKey = '';
   let shopAnalysisQuery = '';
@@ -316,7 +322,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
           if(capture.products)return capture;
           if(!/^(history-products|archive\/products)\/\d{4}-\d{2}-\d{2}\.json$/.test(capture.productsFile||''))return capture;
           if(!titleProductCache.has(capture.productsFile)){
-            const response=await fetch('data/'+capture.productsFile,{cache:'no-store'});
+            const response=await fetchDataFile(capture.productsFile);
             if(!response.ok)throw Error('商品标题资料读取失败：'+capture.aggregateDate);
             const payload=await response.json();
             if(!payload.products||typeof payload.products!=='object'||Array.isArray(payload.products))throw Error('商品标题资料格式错误：'+capture.aggregateDate);
@@ -340,7 +346,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
     if(busy)return;busy=true;
     $('#archiveStatus').textContent='读取归档中…';
     try{
-      const response=await fetch('data/archive/index.json',{cache:'no-store'});
+      const response=await fetchDataFile('archive/index.json');
       if(response.status===404){$('#archiveStatus').textContent='尚无超过30天的归档。之后会自动保存；已删除的旧数据不会凭空补回。';return;}
       if(!response.ok)throw Error('归档索引读取失败');
       const index=await response.json(),entries=(index.captures||[]).filter(e=>e.date>=start&&e.date<=end);
@@ -349,7 +355,7 @@ export function createAnalysis({state, $, escapeHtml:esc, refreshView, formatSta
       for(let i=0;i<entries.length;i+=4){
         const batch=await Promise.all(entries.slice(i,i+4).map(async e=>{
           if(!/^archive\/ranks\/\d{4}-\d{2}-\d{2}\.json$/.test(e.file))throw Error('归档路径无效');
-          const r=await fetch('data/'+e.file,{cache:'no-store'});if(!r.ok)throw Error('归档日读取失败 '+e.date);
+          const r=await fetchDataFile(e.file);if(!r.ok)throw Error('归档日读取失败 '+e.date);
           const c=await r.json();if(!c.genres||!c.capturedAt)throw Error('归档内容无效');return c;
         }));loaded.push(...batch);
       }

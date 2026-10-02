@@ -8,6 +8,7 @@ on:
       - 'data/**'
       - 'assets/**'
       - 'index.html'
+      - 'scripts/assemble_pages.py'
       - '.github/workflows/ranking-pages.yml'
   workflow_dispatch:
 
@@ -30,17 +31,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
 
       - name: Assemble static site
-        run: |
-          mkdir -p _site
-          cp index.html _site/
-          cp -r assets data _site/
-          touch _site/.nojekyll
+        run: python3 scripts/assemble_pages.py --source . --output _site
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
