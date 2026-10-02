@@ -2,7 +2,13 @@ name: Test and deploy Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    paths:
+      - 'data/**'
+      - 'assets/**'
+      - 'index.html'
+      - '.github/workflows/ranking-pages.yml'
   workflow_dispatch:
 
 permissions:
