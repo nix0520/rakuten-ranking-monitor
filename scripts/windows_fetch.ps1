@@ -78,6 +78,27 @@ if (-not $SkipPull) {
     Invoke-CheckedCommand git.exe pull --rebase origin main
 }
 
+$runRecoveryProbe = $false
+if ($Mode -eq "realtime") {
+    $realtimePath = Join-Path $repoRoot "data\realtime\latest.json"
+    try {
+        $realtime = Get-Content $realtimePath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $lastRealtime = [DateTimeOffset]::Parse([string]$realtime.generatedAt)
+        $runRecoveryProbe = ([DateTimeOffset]::UtcNow - $lastRealtime.ToUniversalTime()).TotalMinutes -gt 45
+    }
+    catch {
+        $runRecoveryProbe = $true
+    }
+}
+
+if ($runRecoveryProbe) {
+    Write-Host "Realtime data is stale; checking for a recoverable daily ranking before resuming realtime."
+    & py.exe -3 scripts\fetch_rankings.py --mode daily-probe
+    if ($LASTEXITCODE -ne 0) {
+        throw "Recovery daily probe failed."
+    }
+}
+
 & py.exe -3 scripts\fetch_rankings.py --mode $Mode
 $fetchExitCode = $LASTEXITCODE
 
