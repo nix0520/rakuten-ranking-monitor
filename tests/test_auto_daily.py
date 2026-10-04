@@ -81,13 +81,29 @@ class AutoDailyTests(unittest.TestCase):
         self.assertEqual([a["status"] for a in self.attempts()], ["failed", "succeeded"])
         self.assertEqual(fetch.load_json(self.output / "latest.json", {})["aggregateDate"], self.today)
 
-    def test_old_unknown_future_days_do_not_trigger_full_fetch(self):
+    def test_already_published_old_unknown_future_days_do_not_trigger_full_fetch(self):
+        self.previous["collectionVersion"] = fetch.DAILY_COLLECTION_VERSION
+        fetch.write_json(self.output / "latest.json", self.previous)
         for day in [self.yesterday, "invalid", (self.now + timedelta(days=1)).date().isoformat()]:
             self.source_day = day
             self.run_probe()
         self.assertEqual(len(self.calls), 102)
         self.assertTrue(all(c["max_rank"] == 30 for c in self.calls))
         self.assertEqual(fetch.load_json(self.output / "latest.json", {}), self.previous)
+
+    def test_missed_previous_day_is_recovered_before_api_rollover(self):
+        two_days_ago = (self.now - timedelta(days=2)).date().isoformat()
+        older = {**self.previous, "aggregateDate": two_days_ago,
+                 "generatedAt": (self.now - timedelta(days=2)).isoformat(),
+                 "collectionVersion": fetch.DAILY_COLLECTION_VERSION}
+        fetch.write_json(self.output / "latest.json", older)
+        self.source_day = self.yesterday
+        self.run_probe()
+        self.assertEqual(len(self.calls), 68)
+        self.assertTrue(all(c["expected_date"] == self.yesterday for c in self.calls[34:]))
+        latest = fetch.load_json(self.output / "latest.json", {})
+        self.assertEqual(latest["aggregateDate"], self.yesterday)
+        self.assertEqual(self.attempts()[-1]["status"], "succeeded")
 
     def test_already_detected_but_unpublished_still_triggers(self):
         fetch.update_daily_observations(self.output, self.old_rows, self.now, self.today)
