@@ -841,7 +841,9 @@ def record_auto_daily_fetch(output_dir: Path, aggregate_date: str, status: str,
 
 def needs_auto_daily_fetch(output_dir: Path, aggregate_date: str | None, today: str,
                            categories: list[dict[str, Any]]) -> bool:
-    if not aggregate_date or aggregate_date != today:
+    aggregate_date = source_date(aggregate_date)
+    today = source_date(today)
+    if not aggregate_date or not today or aggregate_date > today:
         return False
     latest = load_json(output_dir / "latest.json", {})
     published_date = source_date(latest.get("aggregateDate"))
@@ -1001,9 +1003,10 @@ def _run(args: argparse.Namespace, expected_daily_date: str | None = None) -> No
 
     aggregate_date = source_date(source_build_at)
     today = captured_at.date().isoformat()
-    if expected_daily_date and (aggregate_date != expected_daily_date or aggregate_date != today
+    if expected_daily_date and (aggregate_date != expected_daily_date
+                                or source_date(expected_daily_date) > today
                                 or not any(rankings.values())):
-        raise RuntimeError("Automatic daily fetch did not produce a complete current-day snapshot")
+        raise RuntimeError("Automatic daily fetch did not produce the requested recoverable snapshot")
     if not args.fixture and aggregate_date != today:
         print(
             f"Daily API has not rolled over ({aggregate_date or 'unknown'}); "
