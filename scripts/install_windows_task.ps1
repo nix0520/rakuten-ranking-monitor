@@ -46,7 +46,9 @@ function New-RankingAction {
     return New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File $quotedScript -Mode $Mode"
 }
 
+$userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $probeTriggers = @(
+    New-ScheduledTaskTrigger -AtLogOn -User $userId
     16..23 | ForEach-Object { New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal $_ 0) }
 )
 $dailyTrigger = New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 15 0)
@@ -56,11 +58,12 @@ $realtimeTrigger = New-ScheduledTaskTrigger -Once -At $realtimeStart `
     -RepetitionDuration (New-TimeSpan -Days 3650)
 
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
-$principal = New-ScheduledTaskPrincipal -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) -LogonType Interactive -RunLevel Limited
+$principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Limited
 
 $dailyTask = New-ScheduledTask -Action (New-RankingAction "daily") -Trigger $dailyTrigger -Settings $settings -Principal $principal -Description "Fetch complete daily rankings directly at 15:00 JST."
-$probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Probe hourly from 16:00 through 23:00 JST until today's complete daily ranking is published."
+$probeTask = New-ScheduledTask -Action (New-RankingAction "daily-probe") -Trigger $probeTriggers -Settings $settings -Principal $principal -Description "Probe at logon and hourly from 16:00 through 23:00 JST until the newest recoverable daily ranking is published."
 $realtimeTask = New-ScheduledTask -Action (New-RankingAction "realtime") -Trigger $realtimeTrigger -Settings $settings -Principal $principal -Description "Fetch all 34 realtime rankings every 20 minutes."
 
 Unregister-ScheduledTask -TaskName "Rakuten Ranking Monitor" -Confirm:$false -ErrorAction SilentlyContinue
@@ -73,6 +76,8 @@ Register-ScheduledTask -TaskName "Rakuten Ranking Realtime" -InputObject $realti
 Write-Host "Scheduled task installed successfully."
 Write-Host "JST full daily fetch: 15:00 directly (no preliminary probe)"
 Write-Host "JST fallback probes: 16:00 through 23:00 hourly; skip after today is complete"
+Write-Host "Recovery probe: at Windows logon, including a still-available previous-day ranking"
+Write-Host "Tasks may start and continue while the computer is on battery power"
 Write-Host "JST realtime 34-genre rankings: every 20 minutes at :05, :25, :45"
 Write-Host "Running a lightweight daily probe now..."
 
