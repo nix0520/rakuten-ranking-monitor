@@ -18,6 +18,8 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("New-ScheduledTaskTrigger -Daily", script)
         self.assertIn('Register-ScheduledTask -TaskName "Rakuten Ranking Daily" -InputObject $dailyTask', script)
         self.assertIn("RepetitionInterval (New-TimeSpan -Minutes 20)", script)
+        self.assertIn("New-ScheduledTaskTrigger -AtLogOn -User $userId", script)
+        self.assertIn("-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries", script)
 
     def test_realtime_does_not_queue_behind_daily_collection(self):
         script = self.read("scripts/windows_fetch.ps1")
@@ -37,6 +39,8 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn('Register-ScheduledTask -TaskName "Rakuten Ranking Daily" -InputObject $dailyTask', script)
         self.assertNotIn("Read-Host", script)
         self.assertNotIn("Rakuten Ranking Realtime", script)
+        self.assertIn("New-ScheduledTaskTrigger -AtLogOn -User $userId", script)
+        self.assertIn("-AllowStartIfOnBatteries -DontStopIfGoingOnBatteries", script)
 
     def test_old_temporary_installer_delegates_to_permanent_schedule(self):
         script = self.read("scripts/install_today_hourly_probe.ps1")
