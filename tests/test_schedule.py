@@ -27,6 +27,8 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("New-TimeSpan -Seconds 1", script)
         self.assertIn("realtime fetch skipped", script)
         self.assertIn("New-TimeSpan -Minutes 55", script)
+        self.assertIn("TotalMinutes -gt 45", script)
+        self.assertIn("--mode daily-probe", script)
 
     def test_schedule_only_installer_preserves_realtime_task(self):
         script = self.read("scripts/install_daily_schedule.ps1")
