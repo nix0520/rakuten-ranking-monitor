@@ -1007,7 +1007,10 @@ def _run(args: argparse.Namespace, expected_daily_date: str | None = None) -> No
                                 or source_date(expected_daily_date) > today
                                 or not any(rankings.values())):
         raise RuntimeError("Automatic daily fetch did not produce the requested recoverable snapshot")
-    if not args.fixture and aggregate_date != today:
+    # A scheduled/manual daily run should only publish today's aggregate, but an
+    # explicitly requested recovery is allowed to publish an older, validated
+    # snapshot while Rakuten still serves it.
+    if not args.fixture and not expected_daily_date and aggregate_date != today:
         print(
             f"Daily API has not rolled over ({aggregate_date or 'unknown'}); "
             "leaving the published daily ranking and history unchanged."
