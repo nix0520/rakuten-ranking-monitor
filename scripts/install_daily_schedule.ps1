@@ -14,7 +14,10 @@ function Convert-JstTimeToLocal {
     return [TimeZoneInfo]::ConvertTimeFromUtc($utc, [TimeZoneInfo]::Local)
 }
 
-$probeTriggers = @(16..23 | ForEach-Object {
+$userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+$probeTriggers = @(
+    New-ScheduledTaskTrigger -AtLogOn -User $userId
+) + @(16..23 | ForEach-Object {
     New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal $_)
 })
 $dailyTrigger = New-ScheduledTaskTrigger -Daily -At (Convert-JstTimeToLocal 15)
@@ -22,12 +25,13 @@ $quotedScript = '"' + $fetchScript + '"'
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File $quotedScript -Mode daily-probe"
 $dailyAction = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File $quotedScript -Mode daily"
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun `
+    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -ExecutionTimeLimit (New-TimeSpan -Hours 2) -MultipleInstances IgnoreNew
 $principal = New-ScheduledTaskPrincipal `
-    -UserId ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name) `
+    -UserId $userId `
     -LogonType Interactive -RunLevel Limited
 $task = New-ScheduledTask -Action $action -Trigger $probeTriggers -Settings $settings `
-    -Principal $principal -Description "Probe hourly from 16:00 through 23:00 JST until today's complete daily ranking is published."
+    -Principal $principal -Description "Probe at logon and hourly from 16:00 through 23:00 JST until the newest recoverable daily ranking is published."
 
 Register-ScheduledTask -TaskName "Rakuten Ranking Daily Probe" -InputObject $task -Force | Out-Null
 $dailyTask = New-ScheduledTask -Action $dailyAction -Trigger $dailyTrigger -Settings $settings `
@@ -39,6 +43,8 @@ Unregister-ScheduledTask -TaskName "Rakuten Ranking Hourly Probe 3 Days" -Confir
 Write-Host "Daily schedule updated successfully."
 Write-Host "JST full daily fetch: 15:00 directly (no preliminary probe)."
 Write-Host "JST fallback probes: 16:00 through 23:00 hourly if today is not complete."
+Write-Host "Recovery probe: at Windows logon, including a still-available previous-day ranking."
+Write-Host "Tasks may start and continue while the computer is on battery power."
 Write-Host "After today's complete daily ranking is published, remaining probes skip the Rakuten API."
 Write-Host "The realtime ranking task remains unchanged (every 20 minutes)."
 Write-Host "Running one daily check now..."
