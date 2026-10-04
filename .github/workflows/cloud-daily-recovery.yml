@@ -1,0 +1,194 @@
+name: Recover daily rankings
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/cloud-daily-recovery.yml'
+  workflow_dispatch:
+    inputs:
+      aggregate_date:
+        description: 'Rakuten aggregate date to recover (YYYY-MM-DD); blank uses the day after the latest publication'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rakuten-daily-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Validate secrets
+        shell: bash
+        env:
+          VLESS_URI: ${{ secrets.VLESS_URI }}
+          MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
+          MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
+          RAKUTEN_ALLOWED_IP: ${{ secrets.RAKUTEN_ALLOWED_IP }}
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${VLESS_URI}" && -z "${MIHOMO_SUBSCRIPTION_URL}" && -z "${MIHOMO_CONFIG_B64}" ]]; then
+            echo "A Mihomo proxy secret is required."
+            exit 1
+          fi
+          for name in RAKUTEN_ALLOWED_IP RAKUTEN_APPLICATION_ID RAKUTEN_ACCESS_KEY; do
+            if [[ -z "${!name}" ]]; then
+              echo "Required repository secret is missing: ${name}"
+              exit 1
+            fi
+          done
+
+      - name: Prepare Mihomo configuration
+        shell: bash
+        env:
+          VLESS_URI: ${{ secrets.VLESS_URI }}
+          MIHOMO_SUBSCRIPTION_URL: ${{ secrets.MIHOMO_SUBSCRIPTION_URL }}
+          MIHOMO_CONFIG_B64: ${{ secrets.MIHOMO_CONFIG_B64 }}
+          MIHOMO_PROXY_PORT: ${{ secrets.MIHOMO_PROXY_PORT }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 "${RUNNER_TEMP}/mihomo"
+          config="${RUNNER_TEMP}/mihomo/config.yaml"
+          port="${MIHOMO_PROXY_PORT:-7890}"
+          if [[ ! "${port}" =~ ^[0-9]+$ ]] || (( port < 1 || port > 65535 )); then
+            echo "MIHOMO_PROXY_PORT must be a valid TCP port."
+            exit 1
+          fi
+          if [[ -n "${VLESS_URI}" ]]; then
+            python3 scripts/vless_to_mihomo.py --uri-env VLESS_URI --port "${port}" --output "${config}"
+          elif [[ -n "${MIHOMO_SUBSCRIPTION_URL}" ]]; then
+            curl --fail --silent --show-error --location --retry 3 --connect-timeout 20 \
+              --user-agent "clash.meta" "${MIHOMO_SUBSCRIPTION_URL}" --output "${config}"
+          else
+            printf '%s' "${MIHOMO_CONFIG_B64}" | base64 --decode > "${config}"
+          fi
+          test -s "${config}"
+          if [[ -z "${VLESS_URI}" ]]; then
+            if grep -qE '^mixed-port:' "${config}"; then
+              sed -i -E "s/^mixed-port:.*/mixed-port: ${port}/" "${config}"
+            else
+              printf '\nmixed-port: %s\n' "${port}" >> "${config}"
+            fi
+            if grep -qE '^mode:' "${config}"; then
+              sed -i -E 's/^mode:.*/mode: global/' "${config}"
+            else
+              printf 'mode: global\n' >> "${config}"
+            fi
+          fi
+          chmod 600 "${config}"
+
+      - name: Download and start Mihomo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_json="${RUNNER_TEMP}/mihomo-release.json"
+          curl --fail --silent --show-error --location \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+            --output "${release_json}"
+          asset_url="$(jq -r '[.assets[] | select(.name | test("^mihomo-linux-amd64-v1-v[0-9].*\\.gz$")) | .browser_download_url][0] // empty' "${release_json}")"
+          test -n "${asset_url}"
+          curl --fail --silent --show-error --location --retry 3 "${asset_url}" --output "${RUNNER_TEMP}/mihomo-bin.gz"
+          gzip --decompress --stdout "${RUNNER_TEMP}/mihomo-bin.gz" > "${RUNNER_TEMP}/mihomo/mihomo"
+          chmod 700 "${RUNNER_TEMP}/mihomo/mihomo"
+          "${RUNNER_TEMP}/mihomo/mihomo" -d "${RUNNER_TEMP}/mihomo" -f "${RUNNER_TEMP}/mihomo/config.yaml" > "${RUNNER_TEMP}/mihomo.log" 2>&1 &
+          echo "MIHOMO_PID=$!" >> "${GITHUB_ENV}"
+
+      - name: Verify fixed proxy exit IP
+        shell: bash
+        env:
+          MIHOMO_PROXY_PORT: ${{ secrets.MIHOMO_PROXY_PORT }}
+          RAKUTEN_ALLOWED_IP: ${{ secrets.RAKUTEN_ALLOWED_IP }}
+        run: |
+          set -euo pipefail
+          port="${MIHOMO_PROXY_PORT:-7890}"
+          proxy="http://127.0.0.1:${port}"
+          actual_ip=""
+          for _ in $(seq 1 30); do
+            if ! kill -0 "${MIHOMO_PID}" 2>/dev/null; then
+              echo "Mihomo stopped before the proxy became ready."
+              exit 1
+            fi
+            actual_ip="$(curl --fail --silent --show-error --connect-timeout 5 --max-time 15 --proxy "${proxy}" https://api.ipify.org || true)"
+            [[ -n "${actual_ip}" ]] && break
+            sleep 2
+          done
+          [[ -n "${actual_ip}" ]]
+          if [[ "${actual_ip}" != "${RAKUTEN_ALLOWED_IP}" ]]; then
+            echo "Proxy exit IP does not match the Rakuten allowlist; API was not called."
+            exit 1
+          fi
+          echo "HTTP_PROXY=${proxy}" >> "${GITHUB_ENV}"
+          echo "HTTPS_PROXY=${proxy}" >> "${GITHUB_ENV}"
+
+      - name: Recover complete daily ranking
+        shell: bash
+        env:
+          RAKUTEN_APPLICATION_ID: ${{ secrets.RAKUTEN_APPLICATION_ID }}
+          RAKUTEN_ACCESS_KEY: ${{ secrets.RAKUTEN_ACCESS_KEY }}
+          REQUESTED_DATE: ${{ inputs.aggregate_date }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          from datetime import date, timedelta
+          sys.path.insert(0, "scripts")
+          import fetch_rankings as fetch
+
+          target = os.environ.get("REQUESTED_DATE", "").strip()
+          if not target:
+              with open("data/publication.json", encoding="utf-8") as stream:
+                  published = date.fromisoformat(json.load(stream)["aggregateDate"])
+              target = (published + timedelta(days=1)).isoformat()
+          if date.fromisoformat(target) > date.today():
+              raise SystemExit("Refusing to request a future aggregate date.")
+          print(f"Recovering Rakuten aggregate date {target}.")
+          args = fetch.parse_args(["--mode", "daily"])
+          fetch.run(args, expected_daily_date=target)
+          with open("data/publication.json", encoding="utf-8") as stream:
+              result = json.load(stream)
+          if result.get("aggregateDate") != target:
+              raise SystemExit("Requested daily ranking was not published.")
+          PY
+
+      - name: Commit recovered data
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- data; then
+            echo "No recovered data changes to publish."
+            exit 0
+          fi
+          git config user.name "rakuten-ranking-bot"
+          git config user.email "rakuten-ranking-bot@users.noreply.github.com"
+          git add -- data
+          git commit -m "data: recover missed Rakuten daily rankings"
+          git pull --rebase origin main
+          git push origin HEAD:main
+
+      - name: Stop Mihomo
+        if: always()
+        shell: bash
+        run: |
+          if [[ -n "${MIHOMO_PID:-}" ]]; then
+            kill "${MIHOMO_PID}" 2>/dev/null || true
+          fi
