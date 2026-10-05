@@ -29,6 +29,17 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("New-TimeSpan -Minutes 55", script)
         self.assertIn("TotalMinutes -gt 45", script)
         self.assertIn("--mode daily-probe", script)
+        self.assertIn("Unpublished ranking checkpoint detected", script)
+        self.assertIn("git.exe fetch origin main", script)
+        self.assertIn("rev-list --count origin/main..HEAD", script)
+        self.assertIn("Start-Transcript", script)
+
+    def test_scheduled_actions_are_hidden_but_persist_logs(self):
+        full = self.read("scripts/install_windows_task.ps1")
+        schedule_only = self.read("scripts/install_daily_schedule.ps1")
+        self.assertIn("-WindowStyle Hidden -NoProfile", full)
+        self.assertIn("-WindowStyle Hidden -NoProfile", schedule_only)
+        self.assertIn("RakutenRankingMonitor\\logs", self.read("scripts/windows_fetch.ps1"))
 
     def test_schedule_only_installer_preserves_realtime_task(self):
         script = self.read("scripts/install_daily_schedule.ps1")
