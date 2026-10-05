@@ -7,6 +7,23 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$transcriptStarted = $false
+$logRoot = Join-Path ([Environment]::GetFolderPath("LocalApplicationData")) "RakutenRankingMonitor\logs"
+try {
+    New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
+    Get-ChildItem -Path $logRoot -Filter "*.log" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    $logTimestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $logPath = Join-Path $logRoot "$logTimestamp-$Mode.log"
+    Start-Transcript -Path $logPath -Append | Out-Null
+    $transcriptStarted = $true
+    Write-Host "Task log: $logPath"
+}
+catch {
+    Write-Warning "Unable to start the persistent task log: $($_.Exception.Message)"
+}
+
 $mutex = New-Object System.Threading.Mutex($false, "RakutenRankingMonitorFetch")
 $mutexAcquired = $false
 try {
@@ -75,7 +92,19 @@ $env:RAKUTEN_APPLICATION_ID = $applicationId.Trim()
 $env:RAKUTEN_ACCESS_KEY = $accessKey.Trim()
 
 if (-not $SkipPull) {
-    Invoke-CheckedCommand git.exe pull --rebase origin main
+    $pendingDataChanges = @(& git.exe status --porcelain -- data)
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to inspect unpublished ranking data before pulling."
+    }
+    if ($pendingDataChanges.Count -gt 0) {
+        # A terminated fetch can leave a valid daily checkpoint in data/. Pulling
+        # first would fail and permanently block every later recovery task.
+        Write-Warning "Unpublished ranking checkpoint detected; preserving it and skipping the initial pull."
+        Invoke-CheckedCommand git.exe fetch origin main
+    }
+    else {
+        Invoke-CheckedCommand git.exe pull --rebase origin main
+    }
 }
 
 $runRecoveryProbe = $false
@@ -108,30 +137,41 @@ if ($LASTEXITCODE -ne 0) {
 }
 if ([string]::IsNullOrWhiteSpace($changes)) {
     Write-Host "No ranking data changed. Nothing to publish."
-    if ($fetchExitCode -ne 0) { throw "Ranking fetch failed. See local task output." }
-    return
 }
 
-Invoke-CheckedCommand git.exe config user.name "rakuten-ranking-bot"
-Invoke-CheckedCommand git.exe config user.email "rakuten-ranking-bot@users.noreply.github.com"
-Invoke-CheckedCommand git.exe add -- data
-$timestamp = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow, "Tokyo Standard Time").ToString("yyyy-MM-dd HH:mm 'JST'")
-Invoke-CheckedCommand git.exe commit -m "data: refresh Rakuten $Mode rankings ($timestamp)"
-$published = $false
-for ($attempt = 1; $attempt -le 3; $attempt++) {
-    & git.exe push origin HEAD:main
-    if ($LASTEXITCODE -eq 0) {
-        $published = $true
-        break
-    }
-    if ($attempt -lt 3) {
-        Write-Host "Push raced with another update; rebasing and retrying ($attempt/3)..."
-        Start-Sleep -Seconds 2
-        Invoke-CheckedCommand git.exe pull --rebase origin main
-    }
+if (-not [string]::IsNullOrWhiteSpace($changes)) {
+    Invoke-CheckedCommand git.exe config user.name "rakuten-ranking-bot"
+    Invoke-CheckedCommand git.exe config user.email "rakuten-ranking-bot@users.noreply.github.com"
+    Invoke-CheckedCommand git.exe add -- data
+    $timestamp = [TimeZoneInfo]::ConvertTimeBySystemTimeZoneId([DateTimeOffset]::UtcNow, "Tokyo Standard Time").ToString("yyyy-MM-dd HH:mm 'JST'")
+    Invoke-CheckedCommand git.exe commit -m "data: refresh Rakuten $Mode rankings ($timestamp)"
 }
-if (-not $published) {
-    throw "Unable to push ranking data after 3 attempts."
+
+# Recover a run that was terminated after commit but before push. Without this
+# check, the next run would see a clean worktree and incorrectly do nothing.
+$aheadText = (& git.exe rev-list --count origin/main..HEAD).Trim()
+if ($LASTEXITCODE -ne 0) {
+    throw "Unable to inspect unpublished local commits."
+}
+$aheadCount = [int]$aheadText
+if ($aheadCount -gt 0) {
+    Write-Host "Publishing $aheadCount local commit(s)..."
+    $published = $false
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        & git.exe push origin HEAD:main
+        if ($LASTEXITCODE -eq 0) {
+            $published = $true
+            break
+        }
+        if ($attempt -lt 3) {
+            Write-Host "Push raced with another update; rebasing and retrying ($attempt/3)..."
+            Start-Sleep -Seconds 2
+            Invoke-CheckedCommand git.exe pull --rebase origin main
+        }
+    }
+    if (-not $published) {
+        throw "Unable to push ranking data after 3 attempts."
+    }
 }
 
 Write-Host "Rakuten $Mode data was fetched and pushed successfully."
@@ -144,4 +184,12 @@ finally {
         $mutex.ReleaseMutex()
     }
     $mutex.Dispose()
+    if ($transcriptStarted) {
+        try {
+            Stop-Transcript | Out-Null
+        }
+        catch {
+            # Logging must never turn a successful collection into a failed task.
+        }
+    }
 }
