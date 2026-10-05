@@ -43,7 +43,7 @@ function New-RankingAction {
     param([string]$Mode)
     $fetchScript = Join-Path $PSScriptRoot "windows_fetch.ps1"
     $quotedScript = '"' + $fetchScript + '"'
-    return New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File $quotedScript -Mode $Mode"
+    return New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File $quotedScript -Mode $Mode"
 }
 
 $userId = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
