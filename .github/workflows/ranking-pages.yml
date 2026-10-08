@@ -18,15 +18,13 @@ permissions:
   id-token: write
 
 concurrency:
-  group: rakuten-ranking-pages
-  cancel-in-progress: false
+  group: rakuten-ranking-pages-v2
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
