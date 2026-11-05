@@ -361,36 +361,50 @@ function renderHealth() {
     Number(collection.completed) === Number(collection.total) && Number(collection.total) > 0;
   let title, detail, level;
   if (state.mode === "daily") {
-    const labels = { published: "今日の日榜は公開済み / 今日已更新", incomplete: "日榜の一部ジャンルが欠測 / 部分类目数据缺失，待重新采集", pending: "新日榜を検出・自動取得対象 / 已检测新日榜，待自动采集完成", 'not-detected': "直近の観測では未切替 / 最近一次探测尚未切榜", unknown: "現在の切替状況は不明 / 当前状态待确认" };
-    title = labels[health.dailyState]; level = health.dailyState === "published" ? "good" : health.dailyStale ? "bad" : "warn";
-    detail = `公開日榜の集計日：${health.publishedDay || "不明"}。${health.firstSeen ? `新日榜の初回検出：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "探測記録は2時間以上前または未記録です。現在も旧榜のままとは断定できません。" : "探測で未公開の当日榜を検出すると、34ジャンルを自動で完全取得・公開します。同じ集計日は重複起動しません。"}${health.dailyStale ? " 公開日榜は前日より古い状態です。" : ""}`;
+    const labels = {
+      published: "今日已更新：完整日榜已发布",
+      incomplete: "日榜部分类目数据缺失，等待补采",
+      pending: "已检测到新日榜，等待自动完整采集",
+      "not-detected": "暂未发现新的日榜切换",
+      unknown: "日榜切换状态待确认"
+    };
+    title = labels[health.dailyState];
+    level = health.dailyState === "published" ? "good"
+      : health.dailyStale ? "bad"
+      : health.dailyState === "not-detected" ? "neutral" : "warn";
+    detail = `当前网站展示的日榜统计日期：${health.publishedDay || "未知"}。${health.firstSeen ? `新日榜首次发现时间：${formatStamp(health.firstSeen)}。` : ""}${health.observationStale ? "最近一次探测已超过2小时或暂无探测记录，暂时无法确认楽天是否已切换到新日榜。" : "探测发现尚未发布的新统计日期后，系统会自动完整采集34个类目并发布；同一统计日期不会重复启动采集。"}${health.dailyStale ? " 当前已发布的日榜日期早于最近应有日期，请留意后续探测。" : ""}`;
     if (health.dailyState === "pending") {
       if (health.autoFetchState === "failed") {
-        title = "自動取得失敗・次回探測で再試行 / 自动完整采集失败，待下次探测重试";
+        title = "自动完整采集失败，等待下次探测重试";
         level = "bad";
-        detail += ` 自動取得失敗：${formatStamp(health.autoFetchAt)}。旧日榜を保持しています。`;
+        detail += `自动采集失败时间：${formatStamp(health.autoFetchAt)}。网站暂时保留上一份完整日榜。`;
       } else {
-        detail += " 完全取得・アップロード・サイト公開の完了後に一覧が切り替わります。旧版の探測記録の場合は、次回の更新済みプログラムで自動取得を試みます。";
+        detail += "新日榜完成全部34个类目采集、上传并成功发布后，网站才会切换到新日期。";
       }
     }
     if (health.missingGenres.length) {
       level = "bad";
-      detail += ` 同じ集計日の観測よりデータが不足：${health.missingGenres.join("、")}。次回の日榜探測で再取得を試みます。前日の順位を今日の値として補完しません。`;
+      detail += `同一统计日期仍缺少以下类目数据：${health.missingGenres.join("、")}。系统会在后续日榜探测时尝试补采；不会用前一天的排名冒充当天数据。`;
     }
     if (health.dailyState === "unknown" && collectionComplete && !health.missingGenres.length) {
-      title = "最新日榜の取得完了 / 最新日榜采集完整";
+      title = "最新日榜已完整采集";
       level = "good";
-      detail = `公開日榜の集計日：${health.publishedDay}。${collection.completed}/${collection.total}ジャンルを完全取得済みです。今日の日榜切替はまだ直近の探測記録がないため、次回の予定時刻に確認します。`;
+      detail = `当前网站展示的日榜统计日期：${health.publishedDay}。已完整采集${collection.completed}/${collection.total}个类目。今天是否切换到新日榜尚无最近探测记录，系统会在下次计划探测时确认。`;
     }
   } else {
-    title = { fresh: "リアルタイムデータは新鮮 / 实时数据正常", stale: "リアルタイム取得から45分超 / 实时记录已过期", unknown: "リアルタイム取得記録なし", clock: "取得時刻が未来 / 请检查电脑时间" }[health.realtimeState];
+    title = {
+      fresh: "实时榜数据正常",
+      stale: "实时榜超过45分钟未更新",
+      unknown: "暂无实时榜采集记录",
+      clock: "采集时间异常，请检查电脑时间"
+    }[health.realtimeState];
     level = health.realtimeState === "fresh" ? "good" : "bad";
-    detail = "通常20分間隔。45分超は記録の鮮度警告で、停止原因の断定ではありません。PC・代理・タスクの実行状態をご確認ください。";
+    detail = "实时榜通常每20分钟采集一次。超过45分钟未更新表示数据可能已过期，但不能仅凭这一点判断采集程序停止；请检查电脑、代理和计划任务。";
   }
   $("#dataHealth").dataset.level = level;
   $("#healthTitle").textContent = title;
   $("#healthDetail").textContent = detail;
-  $("#healthTiming").textContent = `最終日榜観測：${formatStamp(health.lastObservation)}（API集計日 ${health.observedDay || "不明"}） · 完全日榜取得：${formatStamp(state.dailyLatest?.generatedAt)}${collectionMatches ? `（${collection.completed}/${collection.total}ジャンル・${collection.status}）` : ""} · リアルタイム取得：${formatStamp(health.realtimeAt)} · 再読込は保存データの読込のみで、楽天API取得を開始しません。${state.history?.failures?.length ? ` 履歴${state.history.failures.length}件の読込に失敗。比較対象に使いません。` : ""}`;
+  $("#healthTiming").textContent = `最近一次日榜探测：${formatStamp(health.lastObservation)}（API统计日期：${health.observedDay || "未知"}） · 完整日榜采集：${formatStamp(state.dailyLatest?.generatedAt)}${collectionMatches ? `（${collection.completed}/${collection.total}个类目 · ${collection.status === "complete" ? "完整" : collection.status}）` : ""} · 实时榜采集：${formatStamp(health.realtimeAt)} · 点击“重新读取网站数据”只会读取已保存的数据，不会发起楽天API采集。${state.history?.failures?.length ? `另有${state.history.failures.length}条历史记录读取失败，未用于比较。` : ""}`;
 }
 
 function renderCollectionSummary() {
