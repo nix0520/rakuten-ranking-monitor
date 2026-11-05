@@ -154,6 +154,7 @@ footer { padding: 30px; color: var(--muted); font-size: 11px; text-align: center
 
 .health-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; margin: 16px 0; border-radius: 14px; border: 1px solid var(--line); background: #fffaf0; }
 .health-panel[data-level="good"] { background: #effaf3; border-color: #b7ddc5; }
+.health-panel[data-level="neutral"] { background: #f5f7fa; border-color: #d9e0e8; }
 .health-panel[data-level="bad"] { background: #fff0ee; border-color: #edc2ba; }
 .health-panel strong { font-size: 14px; }
 .health-panel p, .health-panel small { margin: 6px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
