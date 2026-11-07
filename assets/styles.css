@@ -137,12 +137,15 @@ tbody tr:hover { background: #fffdf9; }
 .promo { display: block; margin-top: 4px; color: var(--accent); font-size: 10px; font-weight: 700; white-space: normal; }
 .rating { color: #bb7900; font-weight: 800; }
 .review-count { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
-.trend-chart { width: 150px; max-width: 100%; }
+.trend-chart { width: 150px; max-width: 100%; position: relative; }
 .sparkline { display: block; width: 150px; max-width: 100%; height: 42px; overflow: visible; }
 .sparkline path { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 .sparkline circle.spark-last { fill: var(--accent); pointer-events: none; }
 .sparkline circle.spark-node { fill: var(--accent); pointer-events: none; }
-.sparkline circle.spark-hit { fill: transparent; stroke: none; pointer-events: all; }
+.rank-hover-line { stroke: #687a79; stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+svg[data-rank-hover] { cursor: crosshair; }
+.rank-hover-tip { position: absolute; z-index: 2; inset-inline-start: 0; bottom: calc(100% + 4px); max-width: min(280px, 80vw); width: max-content; padding: 5px 8px; border-radius: 6px; color: white; background: #253c3a; font-size: 12px; line-height: 1.5; pointer-events: none; }
+.trend-chart .rank-hover-tip { inset-inline-start: auto; inset-inline-end: 0; }
 .trend-dates { display: flex; justify-content: space-between; gap: 8px; margin-top: 2px; color: #8d857d; font-size: 10px; line-height: 1; white-space: nowrap; }
 .spark-empty { color: #aaa39b; font-size: 11px; }
 .genre-chip { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 6px; border-radius: 5px; color: #625950; background: #f2efeb; font-size: 9px; }
@@ -302,6 +305,49 @@ a.analysis-product-title:hover{text-decoration:underline;color:#bf0000}
 .analysis-product small{overflow-wrap:anywhere}
 #compareProducts{width:100%;margin:10px 0}
 #multiTrend svg{width:100%;max-height:350px;margin-top:15px;background:#fff}
+
+/* Main views and the lightweight reading layout for the ranking table. */
+[hidden] { display: none !important; }
+.portal-nav { display: flex; gap: 8px; padding: 14px 0; }
+.portal-nav button, .compare-form button, .workbench button { border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 8px 12px; color: var(--ink); cursor: pointer; }
+.portal-nav button[aria-pressed="true"] { color: #fff; background: #225b54; border-color: #225b54; }
+.workbench { padding: 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.workbench h2 { margin: 0; }
+.workbench-note, #compareDateLabel { color: var(--muted); font-size: 13px; line-height: 1.55; }
+.compare-form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 10px 0 16px; }
+.compare-form label, .compare-selector { display: grid; gap: 4px; font-size: 13px; }
+.compare-form input, .compare-form select, .compare-selector select { min-height: 38px; border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; background: white; color: var(--ink); }
+.compare-selector { width: fit-content; margin-bottom: 14px; }
+.compare-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.compare-card { display: grid; align-content: start; justify-items: start; gap: 7px; padding: 12px; border: 1px solid var(--line); border-radius: 9px; }
+.compare-card strong { border-inline-start: 4px solid var(--series-color); padding-inline-start: 7px; overflow-wrap: anywhere; }
+.comparison-chart { position: relative; max-width: 820px; margin: 12px 0; }
+.comparison-chart svg { display: block; width: 100%; background: #faf9f7; border-radius: 8px; }
+.comparison-chart svg path { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.comparison-chart svg text { font-size: 12px; fill: var(--ink); }
+#compareCandidates { list-style: none; padding: 0; }
+#compareCandidates li { display: flex; justify-content: space-between; align-items: start; gap: 12px; border-bottom: 1px solid var(--line); padding: 9px 0; }
+#compareCandidates button { flex: none; }
+#compareCandidates small { display: block; color: var(--muted); margin-top: 3px; }
+.compare-delete { margin-top: 8px; }
+#ranking-section th:nth-child(1) { width: 100px; }
+#ranking-section th:nth-child(2) { width: 34%; }
+#ranking-section th:nth-child(3) { width: 15%; }
+#ranking-section th:nth-child(4) { width: 17%; }
+#ranking-section th:nth-child(5) { width: 9%; }
+#ranking-section .price { white-space: normal; overflow-wrap: anywhere; }
+.product-shop, .price-points, .price-change, .promotion-cell small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; font-weight: normal; }
+.promotion-cell { font-size: 13px; overflow-wrap: anywhere; }
+.promotion-cell > span:not(.meta) { font-weight: 650; color: #67432a; }
+.price-change { color: #225b54; }
+#ranking-section .product-name { -webkit-line-clamp: 2; }
+@media (max-width: 680px) {
+  .workbench { padding: 14px; }
+  .compare-form label { width: 100%; }
+  #rankingBody td:nth-child(3) { display: block; grid-column: 2; }
+  #rankingBody td:nth-child(5) { grid-column: 2; }
+  #rankingBody td:nth-child(6) { grid-column: 2; }
+}
 .analysis-detail{margin-top:24px;border-top:1px solid #ddd;padding-top:12px}
 .price .meta{white-space:normal;overflow-wrap:anywhere}
 @media(max-width:680px){#rankingBody td{min-width:0}}

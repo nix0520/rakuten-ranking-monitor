@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import * as insights from '../assets/insights.mjs';
 import * as historyTools from '../assets/history-tools.mjs';
 import { createAnalysis } from '../assets/analysis-ui.mjs';
+import { promotionLabel } from '../assets/compare-workbench.mjs';
 
 function app() {
   const elements = new Map();
@@ -18,7 +19,7 @@ function app() {
     return elements.get(selector);
   }
   const storage = { value: '[]', getItem() { return this.value; }, setItem(_, value) { this.value = value; } };
-  const context = vm.createContext({ ...insights, ...historyTools, createAnalysis, watchlistJson: historyTools.exportWatchlist, document: { querySelector: element, querySelectorAll: () => [] },
+  const context = vm.createContext({ ...insights, ...historyTools, createAnalysis, promotionLabel, createWorkbench:()=>({render(){},show(){}}),bindRankHover(){}, location:{hash:''}, watchlistJson: historyTools.exportWatchlist, document: { querySelector: element, querySelectorAll: () => [] },
     window: { localStorage: storage }, localStorage: storage, Intl, Date, console, URL,
     fetch: async () => ({ ok: true, json: async () => ({ events: [] }) }) });
   const source = readFileSync(new URL('../assets/app.js', import.meta.url), 'utf8')
@@ -62,7 +63,7 @@ test('page templates escape titles and render favorite and history buttons', () 
   assert.doesNotMatch(html, /<script>/);
   assert.equal(a.element('#rolloverPanel').hidden, false);
   a.run("state.mode = 'realtime'; render()");
-  assert.equal(a.element('#rolloverPanel').hidden, true);
+  assert.equal(a.element('#rolloverPanel').hidden, false);
 });
 
 test('dedicated shop search filters by shop name or code and is saved with the view', () => {
@@ -202,7 +203,8 @@ test('selected daily date shows coupon amount and observed date range', async ()
       {capturedAt:'2026-09-02T15:10:00+09:00',aggregateDate:'2026-09-02',genres:{1:{a:1}},metrics:{1:{a:{itemPrice:1000,pointRate:1,promotionHints:['20%OFFクーポン']}}}}
     ]; refreshView()`);
   assert.match(a.element('#rankingBody').innerHTML, /20%OFFクーポン/);
-  assert.match(a.element('#rankingBody').innerHTML, /検出期間 2026-09-01～2026-09-02/);
+  assert.match(a.element('#rankingBody').innerHTML, /20% OFF 优惠券/);
+  assert.doesNotMatch(a.element('#rankingBody').innerHTML, /検出期間|积分 1 → 1/);
   await a.run('openDetail(state.rows[0])');
   assert.match(a.element('#detailBody').innerHTML, /クーポン検出履歴/);
   assert.match(a.element('#detailBody').innerHTML, /2026-09-01～2026-09-02に連続検出/);
@@ -212,7 +214,7 @@ test('selected daily date shows coupon amount and observed date range', async ()
 
 test('zero-rank history and gaps produce no invalid SVG coordinates', () => {
   const a = app();
-  assert.match(a.run('sparkline([])'), /履歴蓄積中/);
+  assert.match(a.run('sparkline([])'), /暂无排名历史/);
   const chart = a.run(`sparkline([{at:'2026-08-30T00:00:00+09:00',day:'2026-08-30',rank:2,dateBasis:'aggregate'},{at:'2026-08-31T00:00:00+09:00',day:'2026-08-31',rank:null,dateBasis:'aggregate'},{at:'2026-09-01T00:00:00+09:00',day:'2026-09-01',rank:1,dateBasis:'aggregate'}])`);
   assert.doesNotMatch(chart, /NaN/);
   assert.doesNotMatch(chart.match(/<path d="([^"]*)"/)[1], /L/);

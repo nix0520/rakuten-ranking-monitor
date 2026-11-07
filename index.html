@@ -21,28 +21,66 @@
   </header>
 
   <main>
-    <nav class="section-nav" aria-label="页面功能导航">
-      <a href="#today-intelligence">今日重点</a><a href="#ranking-section">排行榜</a><a href="#shop-analysis-section">店铺分析</a><a href="#analysis-tools-section">分析工具</a><a href="#export-center">导出中心</a><a href="#dataHealth">数据状态</a>
+    <nav class="portal-nav" aria-label="主页面">
+      <button type="button" data-portal="compare" aria-controls="workbench" aria-pressed="true">我的对标</button>
+      <button type="button" data-portal="ranking" aria-controls="fullRankings" aria-pressed="false">全榜</button>
+      <button type="button" data-portal="status" aria-controls="statusView" aria-pressed="false">数据状态</button>
     </nav>
-    <nav class="ranking-mode" aria-label="ランキング種別">
-      <button class="mode-button active" data-ranking-mode="daily" type="button">日榜 デイリー</button>
-      <button class="mode-button" data-ranking-mode="realtime" type="button"><span class="live-dot"></span>リアルタイム榜</button>
-    </nav>
-    <section id="dataHealth" class="health-panel" aria-live="polite">
-      <div><strong id="healthTitle">データ状態を確認中…</strong><p id="healthDetail"></p><small id="healthTiming"></small></div>
-      <button id="reloadData" type="button">重新读取网站数据</button>
+    <section id="workbench" class="workbench" aria-labelledby="workbenchTitle">
+      <div class="panel-heading"><h2 id="workbenchTitle">我的对标</h2><span id="compareDateLabel"></span></div>
+      <p class="workbench-note">每组 1 款自家商品、最多 3 款竞品。分组和链接只保存在当前浏览器，不会上传；清除浏览器数据后会丢失。</p>
+      <form id="compareCreate" class="compare-form">
+        <label>组名<input id="compareGroupName" placeholder="例如：无钢圈自然聚拢单件" maxlength="50" required></label>
+        <label>日榜类目<select id="compareGenre" required></select></label>
+        <label>商品形式<select id="comparePack"><option value="single">单件</option><option value="bundle">套装 / 多件装</option></select></label>
+        <button type="submit">新建对标组</button>
+      </form>
+      <label class="compare-selector">当前对标组<select id="compareGroups"><option value="">暂无对标组</option></select></label>
+      <form id="compareAdd" class="compare-form" hidden>
+        <label>商品角色<select id="compareRole"><option value="own">自家款</option><option value="rival">竞品</option></select></label>
+        <label>乐天商品链接<input id="compareUrl" type="url" placeholder="https://item.rakuten.co.jp/…" required></label>
+        <label>简称（可选）<input id="compareLabel" maxlength="60"></label>
+        <button type="submit">添加商品</button>
+      </form>
+      <p id="workbenchStatus" role="status"></p>
+      <div id="compareResults" hidden>
+        <div id="compareCards" class="compare-cards"></div>
+        <h3>今日新变化</h3><div id="compareChanges"></div>
+        <h3>近 7 天排名</h3><p class="workbench-note">同类目、同刻度，名次越靠上越好；缺失记录不连线。鼠标移到图上可查看当天名次。</p><div id="compareTrend"></div>
+        <details open><summary>相似竞品候选</summary><p class="workbench-note">从已发布日榜找「无钢圈＋显丰满」相似款，按标题和价格初筛。件数、杯型及优惠以商品页为准。</p><ul id="compareCandidates"></ul></details>
+        <button type="button" id="compareDeleteGroup" class="compare-delete">删除当前对标组</button>
+      </div>
     </section>
+    <section id="statusView" hidden aria-label="数据状态">
+      <section id="dataHealth" class="health-panel" aria-live="polite">
+        <div><strong id="healthTitle">正在检查数据状态…</strong><p id="healthDetail"></p><small id="healthTiming"></small></div>
+        <button id="reloadData" type="button">重新读取网站数据</button>
+      </section>
+      <details id="rolloverPanel" class="observation-panel">
+        <summary>日榜更新与探测记录（日本时间）</summary>
+        <p>分别显示首次检测到新日榜和完整日榜保存的时间。</p><div id="rolloverRows"></div>
+      </details>
+      <details class="observation-panel" open><summary>采集进度与失败补采</summary><div id="collectionProgress"></div></details>
+    </section>
+    <section id="fullRankings" hidden aria-label="全榜">
+    <nav class="section-nav" aria-label="页面功能导航">
+      <a href="#ranking-section">排行榜</a><a href="#today-intelligence">市场提醒</a><a href="#shop-analysis-section">店铺分析</a><a href="#analysis-tools-section">分析工具</a><a href="#export-center">导出中心</a><a href="#dataHealth" data-open-status>数据状态</a>
+    </nav>
+    <nav class="ranking-mode" aria-label="榜单类型">
+      <button class="mode-button active" data-ranking-mode="daily" type="button">日榜</button>
+      <button class="mode-button" data-ranking-mode="realtime" type="button"><span class="live-dot"></span>实时榜</button>
+    </nav>
     <section class="summary" aria-label="概要">
-      <article><span>表示中ジャンル</span><strong id="categoryCount">—</strong></article>
-      <article><span>取得ジャンル</span><strong id="collectionCount">—</strong><small id="collectionCountDetail">—</small></article>
-      <article><span>表示商品</span><strong id="itemCount">—</strong></article>
-      <article><span>新規ランクイン</span><strong id="newCount">—</strong></article>
-      <article><span id="captureLabel">データ期間</span><strong id="captureCount">—</strong></article>
-      <article><span id="switchLabel">日榜検出時刻</span><strong id="dailySwitch">—</strong><small id="dailySwitchDetail">—</small></article>
+      <article><span>当前类目</span><strong id="categoryCount">—</strong></article>
+      <article><span>已采集类目</span><strong id="collectionCount">—</strong><small id="collectionCountDetail">—</small></article>
+      <article><span>当前商品</span><strong id="itemCount">—</strong></article>
+      <article><span>新上榜</span><strong id="newCount">—</strong></article>
+      <article><span id="captureLabel">历史记录</span><strong id="captureCount">—</strong></article>
+      <article><span id="switchLabel">日榜检测时间</span><strong id="dailySwitch">—</strong><small id="dailySwitchDetail">—</small></article>
     </section>
 
-    <section id="today-intelligence" class="today-panel">
-      <div class="panel-heading"><div><p class="eyebrow">DAILY ACTION BOARD</p><h2>今日竞品重点</h2></div><span id="alertCount">计算中…</span></div>
+    <details id="today-intelligence" class="today-panel">
+      <summary>全榜市场提醒 · <span id="alertCount">计算中…</span></summary>
       <div class="alert-settings">
         <label>单日上涨提醒<input id="alertRankJump" type="number" min="1" max="999" value="50">名</label>
         <label>积分提醒<input id="alertPointRate" type="number" min="2" max="100" value="10">倍以上</label>
@@ -50,7 +88,7 @@
         <button id="saveAlertSettings" type="button">保存提醒条件</button>
       </div>
       <div id="priorityAlerts" aria-live="polite"></div>
-    </section>
+    </details>
 
     <section class="control-panel" aria-label="絞り込み">
       <div class="segmented" role="group" aria-label="商品グループ">
@@ -108,12 +146,6 @@
         <small>読み込みは既存のお気に入りと統合します。上書き・削除せず、ファイルは外部へ送信しません。</small><p id="watchTransferStatus" role="status"></p>
       </details>
     </section>
-    <details id="rolloverPanel" class="observation-panel">
-      <summary>日榜の更新・取得記録 · 日本時間（JST）</summary>
-      <p>毎日15:00に完全取得。検出時刻と完全日榜の取得時刻を分けて表示します。過去に観測した切替区間は詳細に残しています。</p>
-      <div id="rolloverRows"></div>
-    </details>
-    <details class="observation-panel"><summary>采集进度与失败补采</summary><div id="collectionProgress"></div></details>
     <section class="analysis-controls" aria-label="竞品筛选">
       <label>持续趋势<select id="signalFilter"><option value="">全部</option><option value="rising">连续3天上涨（日榜）</option><option value="top10">保存期内首次进入前10（日榜）</option></select></label>
       <label>收藏分组<select id="noteGroupFilter"><option value="">全部收藏分组</option></select></label>
@@ -121,6 +153,8 @@
       <label>最低API价格<input id="priceMin" type="number" min="0" placeholder="日元"></label>
       <label>最高API价格<input id="priceMax" type="number" min="0" placeholder="日元"></label>
     </section>
+    <details class="observation-panel" id="advancedAnalysis">
+    <summary>更多分析与导出</summary>
     <section id="analysisPanel" class="analysis-panel">
       <p class="eyebrow">COMPETITOR ANALYSIS</p><h2>竞品分析与每日摘要</h2><p id="analysisBasis"></p>
       <details open><summary>每日变化摘要</summary><div id="dailyDigest"></div></details>
@@ -156,6 +190,7 @@
       <details id="analysis-tools-section"><summary>数据来源与可信度</summary><div class="source-grid"><article><strong>排行榜API</strong><p>排名、API价格、API积分和评论数据。与楽天官方网页榜可能存在时间或名次差异。</p></article><article><strong>标题文字线索</strong><p>优惠券、P10倍等文字来自商品名或Catch Copy，只表示观察到宣称。</p></article><article><strong>商品页人工核对</strong><p>只有你手动登记的商品页积分才标为已确认，不自动回填旧记录。</p></article><article><strong>不可取得</strong><p>竞品真实销量、订单数与准确库存不是公开排行榜数据，不进行推算。</p></article></div></details>
       <p id="autoRefreshStatus" role="status">每2分钟检查已发布的日榜；发现新数据后自动加载，保留筛选条件和正在查看的历史日。</p>
     </section>
+    </details>
     <section id="keywordPanel" class="keyword-panel" aria-labelledby="keywordTitle">
       <div class="keyword-heading">
         <div>
@@ -167,18 +202,16 @@
       <div id="keywordCloud" class="keyword-cloud" aria-live="polite"></div>
       <p class="keyword-note">商品名・キャッチコピーを商品単位で集計。キーワードをクリックすると該当商品を絞り込みます。</p>
     </section>
-    <div id="errorBox" class="error-box" hidden></div>
-
     <section id="ranking-section" class="table-shell" aria-label="ランキング一覧">
       <table>
         <thead>
           <tr>
-            <th class="rank-col">順位</th>
+            <th class="rank-col">排名</th>
             <th>商品</th>
-            <th>ショップ</th>
-            <th>価格・販促</th>
-            <th>レビュー</th>
-            <th>順位トレンド</th>
+            <th>价格与积分</th>
+            <th>促销线索</th>
+            <th>评分</th>
+            <th>排名趋势</th>
           </tr>
         </thead>
         <tbody id="rankingBody"></tbody>
@@ -189,6 +222,8 @@
       </div>
     </section>
     <nav id="pagination" class="pagination" aria-label="排行榜分页"></nav>
+    </section>
+    <div id="errorBox" class="error-box" hidden></div>
   </main>
 
   <dialog id="productDialog" aria-labelledby="detailTitle">

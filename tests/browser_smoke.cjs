@@ -9,7 +9,7 @@ const categories=JSON.parse(fs.readFileSync(path.join(root,'config/categories.js
 const day='2026-09-06',genre='110854';
 let revision=0;
 const dates=Array.from({length:31},(_,i)=>new Date(Date.parse(day+'T00:00:00Z')-(30-i)*86400000).toISOString().slice(0,10));
-const rows=n=>[1,2].map((i)=>({itemCode:'s:'+i,rank:i===1?Math.max(1,31-n):5,itemName:(n<30?'20%OFFクーポン':'30%OFFクーポン')+' P10倍 テストブラ '+i,catchcopy:'',itemPrice:3000,pointRate:1,reviewCount:100+n,reviewAverage:4.5,shopCode:'s',shopName:'Test shop',promotionHints:[n<30?'20%OFFクーポン':'30%OFFクーポン'],itemUrl:'https://item.rakuten.co.jp/test/product/',imageUrl:'https://image.rakuten.co.jp/test.jpg'}));
+const rows=n=>[1,2].map((i)=>({itemCode:'s:'+i,rank:i===1?Math.max(1,31-n):5,itemName:(n<30?'20%OFFクーポン':'30%OFFクーポン')+' P10倍 ノンワイヤー 盛れる テストブラ '+i,catchcopy:'',itemPrice:3000,pointRate:1,reviewCount:100+n,reviewAverage:4.5,shopCode:'s',shopName:'Test shop',promotionHints:[n<30?'20%OFFクーポン':'30%OFFクーポン'],itemUrl:i===1?'https://item.rakuten.co.jp/test/product/':'https://item.rakuten.co.jp/other/rival/',imageUrl:'https://image.rakuten.co.jp/test.jpg'}));
 const snapshots=dates.map((d,n)=>({aggregateDate:d,capturedAt:d+'T15:06:00+09:00',genres:Object.fromEntries(categories.map(c=>[c.id,Object.fromEntries(rows(n).map(r=>[r.itemCode,r.rank]))])),metrics:Object.fromEntries(categories.map(c=>[c.id,Object.fromEntries(rows(n).map(r=>[r.itemCode,{itemPrice:r.itemPrice,pointRate:r.pointRate,itemName:r.itemName,promotionText:r.itemName,reviewCount:r.reviewCount,reviewAverage:r.reviewAverage,promotionHints:r.promotionHints}]))])),products:Object.fromEntries(rows(n).map(r=>[r.itemCode,r]))}));
 const latest=()=>({aggregateDate:day,generatedAt:day+(revision?'T16:06:00+09:00':'T15:06:00+09:00'),collectionVersion:2,categories,rankings:Object.fromEntries(categories.map(c=>[c.id,rows(30)]))});
 const server=http.createServer((req,res)=>{
@@ -20,7 +20,7 @@ const server=http.createServer((req,res)=>{
 });
 (async()=>{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
-  const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
+  const browser=await chromium.launch({headless:true,executablePath:process.env.RANKING_TEST_CHROMIUM||undefined,args:['--no-sandbox']});
   try{
     const page=await browser.newPage({viewport:{width:1440,height:1000}});
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -40,9 +40,42 @@ const server=http.createServer((req,res)=>{
       route.fulfill({status:data?200:404,contentType:'application/json',body:JSON.stringify(data||{})});
     });
     await page.goto('http://127.0.0.1:'+server.address().port);
+    await page.locator('#compareGenre option[value="'+genre+'"]').waitFor({state:'attached'});
+    assert.equal(await page.locator('#workbench').isVisible(),true);
+    await page.fill('#compareGroupName','本地测试组');
+    await page.selectOption('#compareGenre',genre);
+    await page.locator('#compareCreate button').click();
+    await page.fill('#compareUrl','https://item.rakuten.co.jp/test/product/?scid=test');
+    await page.fill('#compareLabel','自家测试款');
+    await page.locator('#compareAdd button').click();
+    await page.locator('#compareCandidates [data-compare-candidate]').first().click();
+    assert.equal(await page.locator('.compare-card').count(),2);
+    assert.match(await page.locator('#compareChanges').innerText(),/新检测到/);
+    const workbenchPlot=page.locator('#compareTrend svg');
+    await workbenchPlot.hover({position:{x:90,y:40}});
+    await page.locator('#compareTrend .rank-hover-tip').waitFor({state:'visible'});
+    const firstX=await workbenchPlot.locator('.rank-hover-line').getAttribute('x1');
+    await workbenchPlot.hover({position:{x:400,y:40}});
+    assert.notEqual(await workbenchPlot.locator('.rank-hover-line').getAttribute('x1'),firstX);
+    await page.locator('#workbenchTitle').hover();
+    await page.locator('#compareTrend .rank-hover-tip').waitFor({state:'hidden'});
+    await page.reload();
+    await page.locator('.compare-card').first().waitFor();
+    assert.equal(await page.locator('.compare-card').count(),2);
+    const guest=await browser.newPage();
+    await guest.goto('http://127.0.0.1:'+server.address().port);
+    assert.equal(await guest.locator('#compareResults').isVisible(),false);
+    await guest.close();
+    await page.locator('[data-portal="status"]').click();
+    assert.equal(await page.locator('#dataHealth').isVisible(),true);
+    await page.locator('[data-portal="ranking"]').click();
     await page.locator('#rankingBody tr').first().waitFor();
     await page.selectOption('#categorySelect',genre);
     assert.equal(await page.locator('#rankingBody tr').count(),2);
+    const spark=page.locator('#rankingBody .sparkline').first();
+    await spark.hover({position:{x:70,y:12}});
+    await page.locator('#rankingBody .rank-hover-tip').first().waitFor({state:'visible'});
+    assert.match(await page.locator('#rankingBody .rank-hover-tip').first().innerText(),/第 \d+ 名/);
     assert.equal(await page.locator('#shopSearchInput').count(),1);
     await page.fill('#shopSearchInput','Test shop');
     assert.equal(await page.locator('#rankingBody tr').count(),2);
@@ -55,7 +88,9 @@ const server=http.createServer((req,res)=>{
     await page.selectOption('#pageSize','1000');
     assert.equal(await page.inputValue('#pageSize'),'1000');
     assert.equal(await page.locator('.section-nav a').count(),6);
+    await page.locator('#today-intelligence > summary').click();
     assert.match(await page.locator('#priorityAlerts').innerText(),/大额优惠券/);
+    await page.locator('#advancedAnalysis > summary').click();
     assert.equal(await page.locator('#mergedProducts .analysis-product').count(),2);
     assert.equal(await page.locator('#dailyDigest .analysis-product img').count()>0,true);
     assert.equal(await page.locator('#shopAnalysisSelect option').count()>0,true);

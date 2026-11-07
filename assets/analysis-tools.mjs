@@ -269,7 +269,9 @@ export function priorityAlerts(rows, before = [], watchlist = new Set(), thresho
     const text=[row.itemName,...(row.promotionHints||[])].join(' ').normalize('NFKC');
     const rates=[...text.matchAll(/(\d{1,2}(?:\.\d+)?)\s*%\s*(?:OFF)?/gi)].map(m=>Number(m[1]));
     const best=rates.length?Math.max(...rates):null;
-    if(best!=null&&best>=couponRate&&/クーポン/.test(text))alerts.push({...base,type:'大额优惠券',level:'high',message:`标题/促销文字检测到${best}%券`,score:120+best});
+    const priorText=old&&[old.itemName,...(old.promotionHints||[])].join(' ').normalize('NFKC');
+    const oldRates=new Set(priorText&&/クーポン/.test(priorText)?[...priorText.matchAll(/(\d{1,2}(?:\.\d+)?)\s*%\s*(?:OFF)?/gi)].map(m=>Number(m[1])):[]);
+    if(old&&best!=null&&best>=couponRate&&/クーポン/.test(text)&&!oldRates.has(best))alerts.push({...base,type:'大额优惠券',level:'high',message:`新检测到${best}%券文案（条件未核实）`,score:120+best});
     if(old&&Number.isFinite(old.reviewCount)&&Number.isFinite(row.reviewCount)&&row.reviewCount-old.reviewCount>=20)alerts.push({...base,type:'评论增长',level:'normal',message:`评论+${row.reviewCount-old.reviewCount}`,score:60+Math.min(30,row.reviewCount-old.reviewCount)});
   }
   const dedup=new Map();

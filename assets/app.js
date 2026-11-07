@@ -1,6 +1,7 @@
 import { WATCH_KEY, jstDay, dailySeries, couponPeriods, filterAndSort, readWatchlist, rolloverWindow } from "./insights.mjs";
 import { archiveSnapshots, referenceProducts, previousSnapshot, snapshotRows, promotionMatches, dataHealth, parseWatchImport, exportWatchlist as watchlistJson } from "./history-tools.mjs";
 import { createAnalysis } from "./analysis-ui.mjs";
+import { bindRankHover, createWorkbench, promotionLabel } from "./compare-workbench.mjs";
 
 const state = { mode: "daily", dailyLatest: null, realtimeLatest: null, latest: null, history: null, updateLog: null, collectionStatus: null, group: "bra", category: "all", query: "", shopQuery: "", days: 7, rows: [], movement: "all", watchedOnly: false, watchlist: new Set(), selectedDay: "latest", compareDay: "", promotionFilter: "all", rankScope: "100", archive: [], viewSnapshot: null, baselineSnapshot: null, viewLoading: false, historyWarning: "", page: 1, pageSize: 50 };
 try { state.watchlist = readWatchlist(window.localStorage); } catch { /* Storage can be disabled. */ }
@@ -18,6 +19,7 @@ async function fetchDataFile(path, options = { cache: "no-store" }) {
   return fetch(`${ARCHIVE_DATA_BASE}${path}`, options);
 }
 const analysis = createAnalysis({ state, $, escapeHtml, refreshView, formatStamp, sparkline, storage: window.localStorage });
+const workbench = createWorkbench({ state, esc: escapeHtml, storage: window.localStorage });
 
 const KEYWORD_PHRASES = [
   "ノンワイヤー", "ナイトブラ", "脇高", "補正下着", "スポーツブラ", "ブラトップ",
@@ -117,17 +119,18 @@ function trendPoints(genreId, itemCode) {
 
 function sparkline(points) {
   const ranked = points.filter(point => Number.isFinite(point.rank));
-  if (!ranked.length) return '<span class="spark-empty">履歴蓄積中</span>';
-  if (points.length < 2) return `<span class="spark-empty">${trendDate.format(new Date(points[0].at))} · ${points[0].rank}位</span>`;
+  if (!ranked.length) return '<span class="spark-empty">暂无排名历史</span>';
+  if (points.length < 2) return `<span class="spark-empty">${trendDate.format(new Date(points[0].at))} · 第 ${points[0].rank} 名</span>`;
   const width = 150, height = 42, pad = 3;
   const min = Math.min(...ranked.map((point) => point.rank));
   const max = Math.max(...ranked.map((point) => point.rank));
   const range = Math.max(max - min, 1);
   const startTime = Date.parse(points[0].at);
   const timeRange = Math.max(Date.parse(points.at(-1).at) - startTime, 86400000);
-  const coordinates = points.map((point, index) => {
+  const position = point => pad + (Date.parse(point.at) - startTime) * (width - pad * 2) / timeRange;
+  const coordinates = points.map((point) => {
     if (!Number.isFinite(point.rank)) return null;
-    const x = pad + (Date.parse(point.at) - startTime) * (width - pad * 2) / timeRange;
+    const x = position(point);
     const y = pad + (point.rank - min) * (height - pad * 2) / range;
     return [x, y];
   });
@@ -135,17 +138,20 @@ function sparkline(points) {
   const last = coordinates.filter(Boolean).at(-1);
   const firstDate = trendDate.format(new Date(points[0].at));
   const lastDate = trendDate.format(new Date(points.at(-1).at));
-  const label = `${firstDate}から${lastDate}: 最高${min}位 / 最低${max}位`;
-  const hitPoints = coordinates.map((coordinate, index) => coordinate ?
-    `<circle class="spark-node" cx="${coordinate[0]}" cy="${coordinate[1]}" r="1.5"/><circle class="spark-hit" cx="${coordinate[0]}" cy="${coordinate[1]}" r="5"><title>${points[index].day} · ${points[index].dateBasis === "aggregate" ? "集計日" : "取得日（集計日不明）"} · ${points[index].rank}位</title></circle>` : ""
+  const label = `${firstDate} 至 ${lastDate}：最好第 ${min} 名，最低第 ${max} 名`;
+  const hover = points.map(point => [position(point), trendDate.format(new Date(point.at)) + " · " +
+    (Number.isFinite(point.rank) ? `第 ${point.rank} 名` : "无排名记录") +
+    (point.dateBasis === "aggregate" ? "" : "（采集日期）")]);
+  const hitPoints = coordinates.map(coordinate => coordinate ?
+    `<circle class="spark-node" cx="${coordinate[0]}" cy="${coordinate[1]}" r="1.5"/>` : ""
   ).join("");
-  return `<div class="trend-chart"><svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}"><path d="${path}"></path>${hitPoints}<circle class="spark-last" cx="${last[0]}" cy="${last[1]}" r="2.7"></circle></svg><div class="trend-dates"><span>${firstDate}</span><span>${lastDate}</span></div></div>`;
+  return `<div class="trend-chart"><svg class="sparkline" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}" data-rank-hover="${escapeHtml(JSON.stringify(hover))}"><path d="${path}"></path>${hitPoints}<circle class="spark-last" cx="${last[0]}" cy="${last[1]}" r="2.7"></circle><line class="rank-hover-line" x1="0" x2="0" y1="0" y2="${height}" visibility="hidden"/></svg><span class="rank-hover-tip" hidden></span><div class="trend-dates"><span>${firstDate}–${lastDate}</span><span>最好第 ${min} 名</span></div></div>`;
 }
 
 function movement(item) {
-  if (item.comparisonState === "exited") return '<span class="movement down">範囲外</span>';
-  if (item.comparisonState === "unavailable") return '<span class="movement stay" title="比較データ不足">不明</span>';
-  if (item.isNew) return '<span class="movement new">NEW</span>';
+  if (item.comparisonState === "exited") return '<span class="movement down">范围外</span>';
+  if (item.comparisonState === "unavailable") return '<span class="movement stay" title="比较记录不足">未知</span>';
+  if (item.isNew) return '<span class="movement new">新上榜</span>';
   if (item.change > 0) return `<span class="movement up">▲ ${item.change}</span>`;
   if (item.change < 0) return `<span class="movement down">▼ ${Math.abs(item.change)}</span>`;
   return '<span class="movement stay">—</span>';
@@ -216,24 +222,9 @@ function safeUrl(value) {
 
 function priceMovement(row) {
   const pieces = [];
-  if (Number.isFinite(row.priceChange)) pieces.push(`価格 ${row.priceChange > 0 ? "+" : ""}${yen.format(row.priceChange)}（${yen.format(row.previousPrice)} → ${yen.format(row.itemPrice)}）`);
-  if (Number.isFinite(row.pointChange)) pieces.push(`ポイント ${row.previousPointRate} → ${row.pointRate}倍`);
-  return pieces.length ? `<span class="promo">${escapeHtml(pieces.join(" · "))}</span>` : '<span class="meta">価格・ポイント比較：記録不足</span>';
-}
-
-function couponObservation(row) {
-  if (state.mode !== "daily") return "";
-  const day = row.targetDate || state.latest?.aggregateDate;
-  if (!day) return "";
-  const periods = couponPeriods(dailySeries(
-    state.archive?.length ? state.archive : state.history?.captures || [],
-    row.category.id, row.itemCode, 30, Date.parse(`${day}T23:59:59+09:00`)
-  )).filter(period => period.days.includes(day));
-  if (!periods.length) return "";
-  const ranges = periods.map(period => period.start === period.end
-    ? `検出日 ${period.start}`
-    : `検出期間 ${period.start}～${period.end}`);
-  return `<span class="meta coupon-period">${escapeHtml([...new Set(ranges)].join(" · "))}</span>`;
+  if (Number.isFinite(row.priceChange) && row.priceChange !== 0) pieces.push(`标价 ${yen.format(row.previousPrice)} → ${yen.format(row.itemPrice)}`);
+  if (Number.isFinite(row.pointChange) && row.pointChange !== 0) pieces.push(`积分 ${row.previousPointRate} → ${row.pointRate} 倍`);
+  return pieces.length ? `<span class="price-change">${escapeHtml(pieces.join(" · "))}</span>` : "";
 }
 
 function rowTemplate(row) {
@@ -242,14 +233,15 @@ function rowTemplate(row) {
     : '<div class="image-placeholder" aria-hidden="true"></div>';
   const title = safeUrl(row.itemUrl) ? `<a class="product-name" href="${safeUrl(row.itemUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.itemName)}</a>` : `<span class="product-name">${escapeHtml(row.itemName)}</span>`;
   const shop = safeUrl(row.shopUrl) ? `<a class="shop-link" href="${safeUrl(row.shopUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(row.shopName)}</a>` : escapeHtml(row.shopName);
+  const hints = [...new Set((row.promotionHints || []).map(promotionLabel))].filter(Boolean);
   return `<tr>
-    <td><div class="rank"><span class="rank-number">${row.rank ?? "—"}</span>${movement(row)}</div>${row.comparisonDate ? `<small class="meta">${row.comparisonDate}：${row.previousRank ?? "不在 / 未取得"}${row.previousRank != null ? "位" : ""}</small>` : ""}</td>
-    <td><div class="product">${image}<div>${title}<div class="meta">${escapeHtml(row.itemCode)}</div><span class="genre-chip">${escapeHtml(row.category.name)}</span>${row.metadataBasis === "reference" ? '<small class="meta provenance">名称・画像・店舗は別時点の参考情報</small>' : row.metadataBasis === "missing" ? '<small class="meta provenance">当時の商品資料は未記録</small>' : ""}</div></div></td>
-    <td>${shop}</td>
-    <td class="price">${Number.isFinite(row.itemPrice) ? yen.format(row.itemPrice) : "未記録"}${Number.isFinite(row.pointRate) ? `<span class="promo">APIポイント${row.pointRate}倍</span>` : '<span class="meta">ポイント未記録</span>'}${row.promotionHints?.length ? `<span class="promo">${escapeHtml(row.promotionHints.join(" · "))}</span>` : ""}${analysis.priceEvidence(row)}${couponObservation(row)}${priceMovement(row)}</td>
-    <td><span class="rating">${Number.isFinite(row.reviewAverage) ? `★ ${row.reviewAverage.toFixed(2)}` : "未記録"}</span><span class="review-count">${Number.isFinite(row.reviewCount) ? `${row.reviewCount.toLocaleString("ja-JP")}件` : ""}</span></td>
-    <td>${state.mode === "realtime" ? '<span class="spark-empty">前回取得比を順位横に表示</span>' : sparkline(trendPoints(row.category.id, row.itemCode))}
-      <div class="row-actions"><button type="button" data-watch="${escapeHtml(row.itemCode)}" aria-pressed="${state.watchlist.has(row.itemCode)}">${state.watchlist.has(row.itemCode) ? "★ 保存済み" : "☆ お気に入り"}</button><button type="button" data-detail-code="${escapeHtml(row.itemCode)}" data-detail-genre="${row.category.id}">履歴詳細</button></div>
+    <td><div class="rank"${row.comparisonDate ? ` title="${escapeHtml(row.comparisonDate)}：${row.previousRank != null ? `第 ${row.previousRank} 名` : "无排名记录"}"` : ""}><span class="rank-number">${row.rank ?? "—"}</span>${movement(row)}</div></td>
+    <td><div class="product">${image}<div>${title}<div class="product-shop">${shop}</div><span class="genre-chip">${escapeHtml(row.category.name)}</span>${row.metadataBasis === "reference" ? '<small class="meta provenance">商品信息为其他日期的参考记录</small>' : row.metadataBasis === "missing" ? '<small class="meta provenance">当日商品详情未记录</small>' : ""}</div></div></td>
+    <td class="price">${Number.isFinite(row.itemPrice) ? yen.format(row.itemPrice) : "未记录"}<span class="price-points">${Number.isFinite(row.pointRate) ? `API 积分 ${row.pointRate} 倍` : "积分未记录"}</span>${priceMovement(row)}</td>
+    <td class="promotion-cell">${hints.length ? `<span>${escapeHtml(hints.slice(0,2).join(" · "))}${hints.length > 2 ? ` · +${hints.length-2}` : ""}</span><small>文案检测 · 条件未核实</small>` : '<span class="meta">未检测到促销文案</span>'}</td>
+    <td><span class="rating">${Number.isFinite(row.reviewAverage) ? `★ ${row.reviewAverage.toFixed(2)}` : "未记录"}</span><span class="review-count">${Number.isFinite(row.reviewCount) ? `${row.reviewCount.toLocaleString("ja-JP")} 条` : ""}</span></td>
+    <td>${state.mode === "realtime" ? '<span class="spark-empty">排名旁显示较上次采集的变化</span>' : sparkline(trendPoints(row.category.id, row.itemCode))}
+      <div class="row-actions"><button type="button" data-watch="${escapeHtml(row.itemCode)}" aria-pressed="${state.watchlist.has(row.itemCode)}">${state.watchlist.has(row.itemCode) ? "★ 已收藏" : "☆ 收藏"}</button><button type="button" data-detail-code="${escapeHtml(row.itemCode)}" data-detail-genre="${row.category.id}">历史详情</button></div>
     </td>
   </tr>`;
 }
@@ -450,9 +442,9 @@ function render() {
   $("#comparisonNote").textContent = state.mode === "daily" ? `日榜：${state.viewSnapshot?.day || "最新"} vs ${state.baselineSnapshot?.day || "過去日未記録"}。価格・ポイントも同じ2日の取得時点を比較。通常上位100位、全保存順位も選択可。` : `リアルタイム：前回の成功した取得との比較（通常20分間隔）。前回：${formatStamp(state.realtimeLatest?.previousCapturedAt)}。`;
   $("#watchStatus").textContent = `${state.watchlist.size}商品を保存 · 現在のジャンル・検索条件・収集範囲に一致する商品だけ表示`;
   $("#watchManager").innerHTML = [...state.watchlist].map(code => `<div>${escapeHtml(code)} <button type="button" data-remove-watch="${escapeHtml(code)}">削除</button></div>`).join("") || "保存した商品はありません。";
-  $("#rolloverPanel").hidden = state.mode !== "daily";
   renderRollover();
   analysis.render();
+  workbench.render();
 }
 
 function formatStamp(value) {
@@ -565,12 +557,13 @@ async function openDetail(row) {
 
 function renderUpdatedAt() {
   const sourceBuild = state.latest?.sourceBuildAt ? ` · 楽天元データ ${state.latest.sourceBuildAt}` : "";
-  const modeLabel = state.mode === "realtime" ? "リアルタイム榜" : "日榜";
+  const modeLabel = state.mode === "realtime" ? "实时榜" : "日榜";
   $("#updatedAt").textContent = state.latest?.generatedAt ? `${modeLabel}更新 ${dateTime.format(new Date(state.latest.generatedAt))} JST${sourceBuild}` : `${modeLabel}の初回取得待ち`;
 }
 
 async function selectMode(mode) {
   state.mode = mode;
+  $("#advancedAnalysis").hidden = mode === "realtime";
   state.category = "all";
   document.querySelectorAll("[data-ranking-mode]").forEach((button) => button.classList.toggle("active", button.dataset.rankingMode === mode));
   $("#subtitle").textContent = mode === "realtime" ? "Bra・ショーツ関連34ジャンルのリアルタイムランキング上位100位を20分間隔で追跡" : "Bra・ショーツ関連、34ジャンルの日次ランキング最大1000位を追跡";
@@ -642,6 +635,23 @@ async function loadHistory(index) {
 }
 
 function bindEvents() {
+  bindRankHover(document);
+  const showPortal = name => {
+    for (const [key,id] of Object.entries({compare:"workbench",ranking:"fullRankings",status:"statusView"})) {
+      $(`#${id}`).hidden=key!==name;
+      $(`[data-portal="${key}"]`).setAttribute("aria-pressed",String(key===name));
+    }
+    workbench.show(name==="compare");
+  };
+  document.querySelectorAll("[data-portal]").forEach(button=>button.addEventListener("click",()=>showPortal(button.dataset.portal)));
+  $("[data-open-status]").addEventListener("click",()=>showPortal("status"));
+  $(".section-nav").addEventListener("click",event=>{
+    const anchor=event.target.closest?.('a[href^="#"]');
+    const target=anchor && document.getElementById(anchor.hash.slice(1));
+    if(target?.closest("#advancedAnalysis"))$("#advancedAnalysis").open=true;
+  });
+  showPortal(location.hash==="#dataHealth" ? "status" : location.hash && document.getElementById(location.hash.slice(1))?.closest("#fullRankings") ? "ranking" : "compare");
+  if(location.hash && document.getElementById(location.hash.slice(1))?.closest("#advancedAnalysis"))$("#advancedAnalysis").open=true;
   analysis.bind(openDetail);
   $("#historyDate").addEventListener("change", event => { state.selectedDay = event.target.value; refreshView(); });
   $("#compareDate").addEventListener("change", event => { state.compareDay = event.target.value; refreshView(); });
